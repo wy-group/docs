@@ -1,0 +1,248 @@
+---
+title: 评估概述
+description: 了解为什么大模型评估如此重要，以及如何构建有效的评估体系
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 大模型评估概述
+
+## 为什么需要大模型评估？
+
+在将大语言模型（LLM）应用于生产环境之前，评估是确保其质量、性能和安全性的关键步骤。没有系统的评估，我们无法：
+
+- **量化模型表现**：了解模型在特定任务上的实际能力
+- **发现潜在问题**：识别幻觉、偏见、安全风险等问题
+- **优化成本效益**：平衡性能与成本，选择最合适的模型
+- **持续改进**：通过数据驱动的方式不断优化系统
+
+<Callout type="warning">
+**真实案例警示**：2023年，某金融机构因未充分评估就部署了客服聊天机器人，导致错误的投资建议造成客户损失超过100万美元。
+</Callout>
+
+## 评估的核心挑战
+
+### 1. 主观性与客观性的平衡
+
+LLM 的输出往往具有创造性和开放性，很难用传统的精确匹配来评估。
+
+```python
+# 传统评估方法的局限性
+expected = "巴黎是法国的首都"
+actual_1 = "法国的首都是巴黎"  # 语义相同，但字符串不匹配
+actual_2 = "巴黎，这座光明之城，是法国的政治中心"  # 更丰富但难以自动评估
+```
+
+### 2. 评估指标的选择
+
+不同的应用场景需要不同的评估指标：
+
+| 应用场景 | 关键指标 | 次要指标 |
+|---------|---------|---------|
+| 客服对话 | 问题解决率、用户满意度 | 响应时间、对话轮数 |
+| 内容生成 | 原创性、相关性 | 语法正确性、可读性 |
+| 代码生成 | 功能正确性、可运行性 | 代码质量、效率 |
+| 信息检索 | 准确率、召回率 | 响应延迟、成本 |
+
+### 3. 规模化评估的成本
+
+<Cards>
+  <Card title="人工评估" description="高质量但成本高、速度慢、难以规模化" />
+  <Card title="自动评估" description="快速且可规模化，但可能遗漏细微问题" />
+  <Card title="混合方案" description="平衡质量与效率，是大多数企业的选择" />
+</Cards>
+
+## 评估框架总览
+
+一个完整的 LLM 评估框架包含以下核心组件：
+
+<Steps>
+  <Step>
+    ### 数据准备
+    - 构建测试数据集
+    - 定义预期输出
+    - 设置评估场景
+  </Step>
+  
+  <Step>
+    ### 执行评估
+    - 运行模型推理
+    - 收集输出结果
+    - 记录性能指标
+  </Step>
+  
+  <Step>
+    ### 结果分析
+    - 计算评估指标
+    - 识别问题模式
+    - 生成评估报告
+  </Step>
+  
+  <Step>
+    ### 持续优化
+    - 调整模型参数
+    - 优化提示词
+    - 迭代改进
+  </Step>
+</Steps>
+
+## 评估方法对比
+
+<Tabs items={['LLM-as-Judge', '人工标注', '自动化指标', '用户反馈']}>
+  <Tab value="LLM-as-Judge">
+    **优势：**
+    - 可规模化执行
+    - 评估标准一致
+    - 成本相对较低
+    
+    **劣势：**
+    - 可能存在模型偏见
+    - 需要精心设计评判标准
+    
+    **最佳实践：**
+    ```python
+    def llm_judge(output, criteria):
+        prompt = f"""
+        请根据以下标准评估输出质量：
+        标准：{criteria}
+        输出：{output}
+        评分（1-10）：
+        """
+        return judge_model.evaluate(prompt)
+    ```
+  </Tab>
+  
+  <Tab value="人工标注">
+    **优势：**
+    - 高质量、可信度高
+    - 能捕捉细微差别
+    - 提供定性反馈
+    
+    **劣势：**
+    - 成本高、速度慢
+    - 存在主观差异
+    - 难以规模化
+    
+    **实施要点：**
+    - 制定清晰的标注指南
+    - 使用多人标注提高一致性
+    - 定期培训和校准
+  </Tab>
+  
+  <Tab value="自动化指标">
+    **优势：**
+    - 快速、客观
+    - 易于自动化
+    - 成本极低
+    
+    **劣势：**
+    - 可能遗漏语义信息
+    - 不适用于开放性任务
+    
+    **常用指标：**
+    - BLEU、ROUGE（文本生成）
+    - Accuracy、F1（分类任务）
+    - Perplexity（语言建模）
+  </Tab>
+  
+  <Tab value="用户反馈">
+    **优势：**
+    - 真实反映用户体验
+    - 持续收集改进数据
+    - 发现未预期的问题
+    
+    **劣势：**
+    - 反馈可能有偏
+    - 需要大量用户参与
+    - 反馈延迟
+    
+    **收集方式：**
+    - 👍/👎 快速反馈
+    - 星级评分
+    - 详细问卷调查
+  </Tab>
+</Tabs>
+
+## 行业最佳实践
+
+### OpenAI 的评估方法
+
+OpenAI 在 GPT 系列模型的开发中采用了多层次评估体系：
+
+1. **基础能力评估**：使用标准化测试集（如 MMLU、HumanEval）
+2. **安全性评估**：红队测试、对抗性评估
+3. **用户研究**：A/B 测试、用户访谈
+
+### Google 的 HELM 框架
+
+斯坦福大学与 Google 合作开发的 HELM (Holistic Evaluation of Language Models) 提供了全面的评估维度：
+
+- **准确性** (Accuracy)
+- **校准度** (Calibration)
+- **鲁棒性** (Robustness)
+- **公平性** (Fairness)
+- **效率** (Efficiency)
+- **毒性** (Toxicity)
+
+### Anthropic 的宪法 AI 评估
+
+Anthropic 强调价值对齐的评估：
+
+```python
+constitutional_criteria = {
+    "helpful": "响应是否有帮助且相关",
+    "harmless": "响应是否安全无害",
+    "honest": "响应是否诚实准确"
+}
+```
+
+## 快速开始建议
+
+<Callout type="info">
+**新手建议**：从简单的 LLM-as-Judge 方法开始，逐步建立评估体系。
+</Callout>
+
+1. **明确评估目标**
+   - 你最关心的是准确性、创造性还是安全性？
+   - 你的用户最在意什么？
+
+2. **选择合适的方法**
+   - 预算有限：优先使用 LLM-as-Judge
+   - 质量要求高：结合人工标注
+   - 需要快速迭代：自动化指标
+
+3. **从小规模开始**
+   - 先用 100 个测试案例验证方法
+   - 逐步扩展到更大规模
+
+4. **建立基准线**
+   - 记录初始性能指标
+   - 设定改进目标
+
+## 本文档导读
+
+本文档将帮助你：
+
+<Cards>
+  <Card title="快速上手" href="/docs/getting-started/quick-start" description="10分钟完成第一个评估" />
+  <Card title="深入理解" href="/docs/getting-started/concepts" description="掌握核心概念和术语" />
+  <Card title="方法选择" href="/docs/evaluation-methods/overview" description="选择适合的评估方法" />
+  <Card title="实战应用" href="/docs/implementation/development-testing" description="在实际项目中应用" />
+</Cards>
+
+## 关键要点总结
+
+- ✅ 评估是 LLM 应用成功的关键，不可忽视
+- ✅ 没有万能的评估方法，需要根据场景选择
+- ✅ 从简单开始，逐步建立完善的评估体系
+- ✅ 平衡自动化与人工评估，追求最佳成本效益
+- ✅ 持续评估和改进是长期过程
+
+## 下一步
+
+准备好开始你的第一个 LLM 评估了吗？
+
+<Card title="快速开始 →" href="/docs/getting-started/quick-start" description="通过实际操作快速掌握评估基础" />

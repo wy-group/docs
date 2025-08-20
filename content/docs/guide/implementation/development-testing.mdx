@@ -1,0 +1,963 @@
+---
+title: 开发阶段测试
+description: 学习如何在开发阶段建立完善的 LLM 评估测试体系
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 开发阶段测试
+
+在开发阶段建立完善的评估测试体系，能够及早发现问题，降低修复成本。本章介绍如何构建开发环境的 LLM 评估测试框架。
+
+## 测试策略概览
+
+### 测试金字塔
+
+<Mermaid
+  chart="
+graph TD
+    A[E2E测试] --> B[集成测试]
+    B --> C[组件测试]
+    C --> D[单元测试]
+    
+    E[少量] --> A
+    F[适中] --> B
+    G[较多] --> C
+    H[大量] --> D
+    
+    I[慢/贵] --> A
+    J[中等] --> B
+    K[较快] --> C
+    L[快/便宜] --> D
+"
+/>
+
+## 开发测试框架
+
+### 1. 测试环境搭建
+
+```python
+class DevelopmentTestEnvironment:
+    """开发测试环境"""
+    
+    def __init__(self, config_path="test_config.yaml"):
+        self.config = self.load_config(config_path)
+        self.test_client = self.setup_test_client()
+        self.mock_services = self.setup_mocks()
+        self.test_data = self.load_test_data()
+    
+    def setup_test_client(self):
+        """设置测试客户端"""
+        
+        if self.config['use_mock']:
+            # 使用模拟LLM
+            from tests.mocks import MockLLM
+            client = MockLLM(
+                responses=self.config['mock_responses'],
+                behavior=self.config['mock_behavior']
+            )
+        else:
+            # 使用真实LLM（开发/测试环境）
+            client = LLMClient(
+                api_key=self.config['test_api_key'],
+                base_url=self.config['test_endpoint'],
+                timeout=self.config['timeout']
+            )
+        
+        # 添加测试中间件
+        client.add_middleware(TestLoggingMiddleware())
+        client.add_middleware(TestMetricsMiddleware())
+        
+        return client
+    
+    def setup_mocks(self):
+        """设置模拟服务"""
+        
+        mocks = {}
+        
+        # 模拟数据库
+        if self.config['mock_database']:
+            mocks['database'] = MockDatabase()
+        
+        # 模拟外部API
+        if self.config['mock_external_apis']:
+            mocks['external_apis'] = MockExternalAPIs()
+        
+        # 模拟向量数据库
+        if self.config['mock_vector_db']:
+            mocks['vector_db'] = MockVectorDB()
+        
+        return mocks
+    
+    def load_test_data(self):
+        """加载测试数据"""
+        
+        return {
+            'golden_dataset': self.load_golden_dataset(),
+            'edge_cases': self.load_edge_cases(),
+            'regression_tests': self.load_regression_tests(),
+            'performance_benchmarks': self.load_performance_benchmarks()
+        }
+    
+    def load_golden_dataset(self):
+        """加载黄金测试集"""
+        
+        dataset = []
+        
+        # 从文件加载
+        with open(self.config['golden_dataset_path'], 'r') as f:
+            raw_data = json.load(f)
+        
+        for item in raw_data:
+            dataset.append({
+                'input': item['input'],
+                'expected_output': item['expected_output'],
+                'evaluation_criteria': item.get('evaluation_criteria', {}),
+                'metadata': item.get('metadata', {})
+            })
+        
+        return dataset
+```
+
+### 2. 单元测试
+
+<Tabs items={['基础测试', '参数化测试', '属性测试', 'Mock测试']}>
+  <Tab value="基础测试">
+    ```python
+    import unittest
+    from unittest import TestCase
+    
+    class LLMUnitTests(TestCase):
+        """LLM单元测试"""
+        
+        def setUp(self):
+            """测试前设置"""
+            self.evaluator = LLMEvaluator()
+            self.test_input = "What is the capital of France?"
+            self.test_output = "The capital of France is Paris."
+        
+        def test_accuracy_metric(self):
+            """测试准确性指标"""
+            
+            # 准备测试数据
+            reference = "Paris is the capital of France."
+            
+            # 计算准确性
+            accuracy = self.evaluator.calculate_accuracy(
+                self.test_output,
+                reference
+            )
+            
+            # 断言
+            self.assertGreater(accuracy, 0.8)
+            self.assertLessEqual(accuracy, 1.0)
+        
+        def test_relevance_metric(self):
+            """测试相关性指标"""
+            
+            relevance = self.evaluator.calculate_relevance(
+                self.test_input,
+                self.test_output
+            )
+            
+            self.assertGreater(relevance, 0.7)
+        
+        def test_fluency_metric(self):
+            """测试流畅性指标"""
+            
+            fluency = self.evaluator.calculate_fluency(
+                self.test_output
+            )
+            
+            self.assertIsNotNone(fluency)
+            self.assertIsInstance(fluency, float)
+        
+        def test_safety_check(self):
+            """测试安全性检查"""
+            
+            unsafe_output = "This contains harmful content..."
+            
+            safety_result = self.evaluator.check_safety(unsafe_output)
+            
+            self.assertFalse(safety_result['is_safe'])
+            self.assertIn('harmful_content', safety_result['violations'])
+        
+        def tearDown(self):
+            """测试后清理"""
+            self.evaluator.cleanup()
+    ```
+  </Tab>
+  
+  <Tab value="参数化测试">
+    ```python
+    import pytest
+    from parameterized import parameterized
+    
+    class ParameterizedTests:
+        """参数化测试"""
+        
+        @parameterized.expand([
+            ("short_text", "Hello", 0.9, 1.0),
+            ("medium_text", "The quick brown fox jumps over the lazy dog", 0.8, 0.95),
+            ("long_text", "Lorem ipsum..." * 100, 0.7, 0.9),
+            ("code_snippet", "def hello(): return 'world'", 0.6, 0.85),
+        ])
+        def test_fluency_across_text_types(self, name, text, min_score, max_score):
+            """测试不同文本类型的流畅性"""
+            
+            evaluator = FluencyEvaluator()
+            score = evaluator.evaluate(text)
+            
+            assert min_score <= score <= max_score, \
+                f"Fluency score {score} out of range for {name}"
+        
+        @pytest.mark.parametrize("model,expected_quality", [
+            ("gpt-4", 0.9),
+            ("gpt-3.5-turbo", 0.8),
+            ("claude-3", 0.85),
+            ("llama-2-70b", 0.75),
+        ])
+        def test_model_quality_baseline(self, model, expected_quality):
+            """测试不同模型的质量基线"""
+            
+            test_prompt = "Explain quantum computing in simple terms"
+            
+            response = generate_with_model(model, test_prompt)
+            quality = evaluate_response_quality(response)
+            
+            # 允许10%的误差
+            assert abs(quality - expected_quality) < 0.1
+        
+        @parameterized.expand([
+            ({"temperature": 0.0}, "deterministic"),
+            ({"temperature": 0.5}, "balanced"),
+            ({"temperature": 1.0}, "creative"),
+            ({"top_p": 0.1}, "focused"),
+            ({"top_p": 0.9}, "diverse"),
+        ])
+        def test_generation_parameters(self, params, expected_style):
+            """测试不同生成参数的影响"""
+            
+            prompt = "Write a story about a robot"
+            
+            response = generate_with_params(prompt, params)
+            style = analyze_writing_style(response)
+            
+            assert style == expected_style
+    ```
+  </Tab>
+  
+  <Tab value="属性测试">
+    ```python
+    from hypothesis import given, strategies as st
+    import hypothesis.extra.numpy as npst
+    
+    class PropertyBasedTests:
+        """基于属性的测试"""
+        
+        @given(
+            text=st.text(min_size=1, max_size=1000),
+            language=st.sampled_from(['en', 'es', 'fr', 'de', 'zh'])
+        )
+        def test_translation_reversibility(self, text, language):
+            """测试翻译的可逆性"""
+            
+            # 翻译到目标语言
+            translated = translate(text, target=language)
+            
+            # 翻译回原语言
+            back_translated = translate(translated, target='en')
+            
+            # 计算相似度
+            similarity = calculate_similarity(text, back_translated)
+            
+            # 属性：往返翻译应保持语义
+            assert similarity > 0.7
+        
+        @given(
+            prompt=st.text(min_size=10, max_size=500),
+            max_tokens=st.integers(min_value=10, max_value=2000)
+        )
+        def test_response_length_constraint(self, prompt, max_tokens):
+            """测试响应长度约束"""
+            
+            response = generate(prompt, max_tokens=max_tokens)
+            
+            # 属性：响应不应超过最大token数
+            actual_tokens = count_tokens(response)
+            assert actual_tokens <= max_tokens
+        
+        @given(
+            scores=npst.arrays(
+                dtype=np.float64,
+                shape=npst.array_shapes(min_dims=1, max_dims=1),
+                elements=st.floats(min_value=0, max_value=1)
+            )
+        )
+        def test_aggregation_properties(self, scores):
+            """测试聚合函数的属性"""
+            
+            if len(scores) == 0:
+                return
+            
+            # 计算不同的聚合
+            mean_score = np.mean(scores)
+            median_score = np.median(scores)
+            min_score = np.min(scores)
+            max_score = np.max(scores)
+            
+            # 属性1：均值在最小值和最大值之间
+            assert min_score <= mean_score <= max_score
+            
+            # 属性2：中位数在最小值和最大值之间
+            assert min_score <= median_score <= max_score
+            
+            # 属性3：加权平均应在范围内
+            weights = np.random.dirichlet(np.ones(len(scores)))
+            weighted_avg = np.average(scores, weights=weights)
+            assert min_score <= weighted_avg <= max_score
+    ```
+  </Tab>
+  
+  <Tab value="Mock测试">
+    ```python
+    from unittest.mock import Mock, patch, MagicMock
+    
+    class MockTests(TestCase):
+        """Mock测试"""
+        
+        @patch('llm_client.LLMClient')
+        def test_with_mock_llm(self, mock_llm_class):
+            """使用Mock LLM测试"""
+            
+            # 设置Mock行为
+            mock_instance = Mock()
+            mock_instance.generate.return_value = {
+                'text': 'Mocked response',
+                'tokens': 10,
+                'latency': 0.1
+            }
+            mock_llm_class.return_value = mock_instance
+            
+            # 执行测试
+            evaluator = QualityEvaluator(llm_client=mock_instance)
+            result = evaluator.evaluate("Test prompt")
+            
+            # 验证
+            mock_instance.generate.assert_called_once_with("Test prompt")
+            self.assertEqual(result['response'], 'Mocked response')
+        
+        def test_with_mock_evaluator(self):
+            """使用Mock评估器测试"""
+            
+            # 创建Mock评估器
+            mock_evaluator = MagicMock()
+            mock_evaluator.evaluate.side_effect = lambda x: {
+                'score': 0.8 if 'good' in x else 0.3,
+                'details': 'Mocked evaluation'
+            }
+            
+            # 测试不同输入
+            good_response = "This is a good response"
+            bad_response = "This is a bad response"
+            
+            good_result = mock_evaluator.evaluate(good_response)
+            bad_result = mock_evaluator.evaluate(bad_response)
+            
+            self.assertGreater(good_result['score'], bad_result['score'])
+        
+        @patch('external_api.ExternalValidator')
+        def test_external_validation(self, mock_validator):
+            """测试外部验证服务"""
+            
+            # 模拟外部服务响应
+            mock_validator.validate.return_value = {
+                'is_valid': True,
+                'confidence': 0.95,
+                'issues': []
+            }
+            
+            # 执行验证
+            validator = ResponseValidator(
+                external_validator=mock_validator
+            )
+            
+            result = validator.validate("Test response")
+            
+            # 验证调用
+            mock_validator.validate.assert_called()
+            self.assertTrue(result['is_valid'])
+    ```
+  </Tab>
+</Tabs>
+
+### 3. 集成测试
+
+```python
+class IntegrationTests:
+    """集成测试套件"""
+    
+    def __init__(self):
+        self.test_env = DevelopmentTestEnvironment()
+        self.test_runner = TestRunner()
+    
+    def test_end_to_end_pipeline(self):
+        """测试端到端流程"""
+        
+        test_cases = [
+            {
+                'name': 'Simple QA',
+                'input': {
+                    'prompt': 'What is 2+2?',
+                    'context': None,
+                    'parameters': {'temperature': 0}
+                },
+                'expected': {
+                    'contains': ['4', 'four'],
+                    'quality_score': 0.9,
+                    'latency_ms': 1000
+                }
+            },
+            {
+                'name': 'Complex Reasoning',
+                'input': {
+                    'prompt': 'Explain why the sky is blue',
+                    'context': 'Scientific explanation for a child',
+                    'parameters': {'temperature': 0.7}
+                },
+                'expected': {
+                    'min_length': 100,
+                    'quality_score': 0.8,
+                    'readability': 'easy'
+                }
+            }
+        ]
+        
+        results = []
+        for test_case in test_cases:
+            result = self.run_integration_test(test_case)
+            results.append(result)
+        
+        return self.generate_test_report(results)
+    
+    def run_integration_test(self, test_case):
+        """运行单个集成测试"""
+        
+        # 1. 生成响应
+        response = self.test_env.test_client.generate(
+            test_case['input']['prompt'],
+            context=test_case['input'].get('context'),
+            **test_case['input'].get('parameters', {})
+        )
+        
+        # 2. 评估质量
+        quality_result = self.evaluate_quality(
+            response,
+            test_case['expected']
+        )
+        
+        # 3. 检查性能
+        performance_result = self.check_performance(
+            response,
+            test_case['expected']
+        )
+        
+        # 4. 验证业务规则
+        business_result = self.validate_business_rules(
+            response,
+            test_case
+        )
+        
+        return {
+            'test_name': test_case['name'],
+            'passed': all([
+                quality_result['passed'],
+                performance_result['passed'],
+                business_result['passed']
+            ]),
+            'quality': quality_result,
+            'performance': performance_result,
+            'business': business_result,
+            'response': response
+        }
+    
+    def test_rag_pipeline(self):
+        """测试RAG管道"""
+        
+        # 准备测试文档
+        test_documents = [
+            "The Earth orbits around the Sun.",
+            "The Moon orbits around the Earth.",
+            "Mars is the fourth planet from the Sun."
+        ]
+        
+        # 索引文档
+        self.test_env.mocks['vector_db'].index(test_documents)
+        
+        # 测试检索和生成
+        test_queries = [
+            "What orbits around the Sun?",
+            "Tell me about Mars",
+            "Explain the solar system"
+        ]
+        
+        for query in test_queries:
+            # 检索相关文档
+            retrieved = self.test_env.mocks['vector_db'].search(
+                query, 
+                top_k=2
+            )
+            
+            # 生成增强响应
+            response = self.test_env.test_client.generate(
+                prompt=query,
+                context=retrieved
+            )
+            
+            # 评估RAG质量
+            rag_quality = self.evaluate_rag_quality(
+                query=query,
+                retrieved=retrieved,
+                response=response
+            )
+            
+            assert rag_quality['relevance'] > 0.7
+            assert rag_quality['grounding'] > 0.8
+```
+
+### 4. 回归测试
+
+```python
+class RegressionTestSuite:
+    """回归测试套件"""
+    
+    def __init__(self):
+        self.baseline_results = self.load_baseline()
+        self.tolerance = 0.05  # 5%容差
+    
+    def load_baseline(self):
+        """加载基线结果"""
+        
+        with open('tests/baseline_results.json', 'r') as f:
+            return json.load(f)
+    
+    def run_regression_tests(self, current_model):
+        """运行回归测试"""
+        
+        regression_report = {
+            'timestamp': datetime.now().isoformat(),
+            'model_version': current_model.version,
+            'tests': [],
+            'summary': {}
+        }
+        
+        for test_case in self.baseline_results['test_cases']:
+            # 运行测试
+            current_result = self.run_test(
+                current_model,
+                test_case
+            )
+            
+            # 比较结果
+            comparison = self.compare_results(
+                baseline=test_case['baseline_result'],
+                current=current_result
+            )
+            
+            regression_report['tests'].append({
+                'test_id': test_case['id'],
+                'name': test_case['name'],
+                'baseline': test_case['baseline_result'],
+                'current': current_result,
+                'comparison': comparison,
+                'status': 'passed' if comparison['within_tolerance'] else 'failed'
+            })
+        
+        # 生成摘要
+        regression_report['summary'] = self.generate_summary(
+            regression_report['tests']
+        )
+        
+        return regression_report
+    
+    def compare_results(self, baseline, current):
+        """比较基线和当前结果"""
+        
+        comparison = {
+            'within_tolerance': True,
+            'metrics': {}
+        }
+        
+        # 比较各项指标
+        for metric in ['accuracy', 'relevance', 'fluency', 'latency']:
+            if metric in baseline and metric in current:
+                baseline_value = baseline[metric]
+                current_value = current[metric]
+                
+                if metric == 'latency':
+                    # 延迟允许增加20%
+                    degradation = (current_value - baseline_value) / baseline_value
+                    acceptable = degradation < 0.2
+                else:
+                    # 质量指标允许下降5%
+                    degradation = (baseline_value - current_value) / baseline_value
+                    acceptable = degradation < self.tolerance
+                
+                comparison['metrics'][metric] = {
+                    'baseline': baseline_value,
+                    'current': current_value,
+                    'change': current_value - baseline_value,
+                    'change_percent': degradation * 100,
+                    'acceptable': acceptable
+                }
+                
+                if not acceptable:
+                    comparison['within_tolerance'] = False
+        
+        return comparison
+    
+    def update_baseline(self, new_results, approval_required=True):
+        """更新基线（需要批准）"""
+        
+        if approval_required:
+            # 生成变更报告
+            change_report = self.generate_change_report(
+                self.baseline_results,
+                new_results
+            )
+            
+            # 请求批准
+            approved = self.request_approval(change_report)
+            
+            if not approved:
+                return False
+        
+        # 备份旧基线
+        backup_path = f'tests/baseline_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        shutil.copy('tests/baseline_results.json', backup_path)
+        
+        # 更新基线
+        with open('tests/baseline_results.json', 'w') as f:
+            json.dump(new_results, f, indent=2)
+        
+        return True
+```
+
+### 5. 性能测试
+
+```python
+class PerformanceTestSuite:
+    """性能测试套件"""
+    
+    def __init__(self):
+        self.load_generator = LoadGenerator()
+        self.metrics_collector = MetricsCollector()
+    
+    def test_latency_benchmarks(self):
+        """延迟基准测试"""
+        
+        test_scenarios = [
+            {
+                'name': 'simple_completion',
+                'prompt_tokens': 10,
+                'max_tokens': 50,
+                'expected_p95_ms': 500
+            },
+            {
+                'name': 'medium_completion',
+                'prompt_tokens': 100,
+                'max_tokens': 200,
+                'expected_p95_ms': 1000
+            },
+            {
+                'name': 'long_completion',
+                'prompt_tokens': 500,
+                'max_tokens': 500,
+                'expected_p95_ms': 2000
+            }
+        ]
+        
+        results = {}
+        
+        for scenario in test_scenarios:
+            # 生成测试负载
+            test_prompts = self.generate_test_prompts(
+                count=100,
+                tokens=scenario['prompt_tokens']
+            )
+            
+            # 运行测试
+            latencies = []
+            for prompt in test_prompts:
+                start_time = time.perf_counter()
+                
+                response = generate_response(
+                    prompt,
+                    max_tokens=scenario['max_tokens']
+                )
+                
+                latency = (time.perf_counter() - start_time) * 1000
+                latencies.append(latency)
+            
+            # 计算统计
+            results[scenario['name']] = {
+                'p50': np.percentile(latencies, 50),
+                'p95': np.percentile(latencies, 95),
+                'p99': np.percentile(latencies, 99),
+                'mean': np.mean(latencies),
+                'std': np.std(latencies),
+                'passed': np.percentile(latencies, 95) < scenario['expected_p95_ms']
+            }
+        
+        return results
+    
+    def test_throughput(self):
+        """吞吐量测试"""
+        
+        # 配置并发级别
+        concurrency_levels = [1, 5, 10, 20, 50]
+        duration_seconds = 60
+        
+        throughput_results = {}
+        
+        for concurrency in concurrency_levels:
+            # 运行负载测试
+            result = self.load_generator.run(
+                concurrency=concurrency,
+                duration=duration_seconds,
+                scenario='mixed_workload'
+            )
+            
+            throughput_results[f'concurrent_{concurrency}'] = {
+                'requests_per_second': result['rps'],
+                'success_rate': result['success_rate'],
+                'error_rate': result['error_rate'],
+                'p95_latency': result['p95_latency']
+            }
+        
+        # 找出最优并发级别
+        optimal_concurrency = self.find_optimal_concurrency(
+            throughput_results
+        )
+        
+        return {
+            'results': throughput_results,
+            'optimal_concurrency': optimal_concurrency
+        }
+    
+    def test_memory_usage(self):
+        """内存使用测试"""
+        
+        import tracemalloc
+        import gc
+        
+        # 开始跟踪
+        tracemalloc.start()
+        
+        # 基线内存
+        gc.collect()
+        baseline = tracemalloc.take_snapshot()
+        
+        # 执行操作
+        responses = []
+        for i in range(100):
+            response = generate_response(
+                f"Test prompt {i}",
+                max_tokens=100
+            )
+            responses.append(response)
+        
+        # 峰值内存
+        peak = tracemalloc.take_snapshot()
+        
+        # 清理后内存
+        responses.clear()
+        gc.collect()
+        after_cleanup = tracemalloc.take_snapshot()
+        
+        # 分析内存使用
+        peak_stats = peak.compare_to(baseline, 'lineno')
+        leak_stats = after_cleanup.compare_to(baseline, 'lineno')
+        
+        return {
+            'peak_memory_mb': sum(stat.size for stat in peak_stats) / 1024 / 1024,
+            'leaked_memory_mb': sum(stat.size for stat in leak_stats) / 1024 / 1024,
+            'top_allocations': [(stat.traceback, stat.size) for stat in peak_stats[:10]]
+        }
+```
+
+## 测试自动化
+
+### CI/CD集成
+
+```yaml
+# .github/workflows/llm-tests.yml
+name: LLM Evaluation Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * *'  # 每天凌晨2点运行
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-test.txt
+      
+      - name: Run unit tests
+        run: |
+          pytest tests/unit --cov=llm_evaluator --cov-report=xml
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v2
+  
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Run integration tests
+        env:
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+        run: |
+          python -m pytest tests/integration -v
+  
+  regression-tests:
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Download baseline
+        uses: actions/download-artifact@v2
+        with:
+          name: baseline-results
+      
+      - name: Run regression tests
+        run: |
+          python scripts/run_regression_tests.py
+      
+      - name: Upload regression report
+        uses: actions/upload-artifact@v2
+        with:
+          name: regression-report
+          path: reports/regression.html
+  
+  performance-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v2
+      
+      - name: Run performance tests
+        run: |
+          python scripts/run_performance_tests.py
+      
+      - name: Update metrics dashboard
+        run: |
+          python scripts/update_dashboard.py
+```
+
+## 测试报告与分析
+
+```python
+class TestReporter:
+    """测试报告生成器"""
+    
+    def generate_html_report(self, test_results):
+        """生成HTML测试报告"""
+        
+        template = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>LLM Evaluation Test Report</title>
+            <style>
+                .passed { color: green; }
+                .failed { color: red; }
+                .warning { color: orange; }
+            </style>
+        </head>
+        <body>
+            <h1>Test Report - {timestamp}</h1>
+            
+            <h2>Summary</h2>
+            <table>
+                <tr><td>Total Tests:</td><td>{total}</td></tr>
+                <tr><td>Passed:</td><td class="passed">{passed}</td></tr>
+                <tr><td>Failed:</td><td class="failed">{failed}</td></tr>
+                <tr><td>Pass Rate:</td><td>{pass_rate:.1%}</td></tr>
+            </table>
+            
+            <h2>Quality Metrics</h2>
+            {quality_section}
+            
+            <h2>Performance Metrics</h2>
+            {performance_section}
+            
+            <h2>Regression Analysis</h2>
+            {regression_section}
+            
+            <h2>Detailed Results</h2>
+            {detailed_section}
+        </body>
+        </html>
+        """
+        
+        return template.format(
+            timestamp=datetime.now().isoformat(),
+            total=test_results['summary']['total'],
+            passed=test_results['summary']['passed'],
+            failed=test_results['summary']['failed'],
+            pass_rate=test_results['summary']['pass_rate'],
+            quality_section=self.generate_quality_section(test_results),
+            performance_section=self.generate_performance_section(test_results),
+            regression_section=self.generate_regression_section(test_results),
+            detailed_section=self.generate_detailed_section(test_results)
+        )
+```
+
+## 最佳实践
+
+<Cards>
+  <Card title="测试金字塔">
+    大量单元测试，适量集成测试，少量端到端测试
+  </Card>
+  
+  <Card title="持续测试">
+    将测试集成到CI/CD流程，实现持续验证
+  </Card>
+  
+  <Card title="测试数据管理">
+    维护高质量的测试数据集，定期更新和扩充
+  </Card>
+  
+  <Card title="性能基线">
+    建立性能基线，持续监控性能退化
+  </Card>
+</Cards>
+
+## 关键要点
+
+- ✅ 建立分层测试策略，覆盖不同测试场景
+- ✅ 使用Mock和测试替身提高测试效率
+- ✅ 实施回归测试防止质量退化
+- ✅ 自动化测试流程，集成到CI/CD
+- ✅ 生成详细的测试报告用于分析改进

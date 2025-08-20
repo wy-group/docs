@@ -1,0 +1,1051 @@
+---
+title: 自定义评分
+description: 设计和实现针对特定业务需求的自定义评分系统
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 自定义评分系统
+
+每个业务场景都有其独特的评估需求。本章将介绍如何设计、实现和优化自定义评分系统。
+
+## 为什么需要自定义评分
+
+### 通用评分的局限性
+
+<Mermaid
+  chart="
+graph TD
+    A[通用评分局限] --> B[业务特异性]
+    A --> C[领域知识]
+    A --> D[用户期望]
+    A --> E[监管要求]
+    
+    B --> B1[独特的成功标准]
+    B --> B2[特定的业务目标]
+    
+    C --> C1[专业术语]
+    C --> C2[行业标准]
+    
+    D --> D1[文化差异]
+    D --> D2[使用场景]
+    
+    E --> E1[合规性]
+    E --> E2[审计需求]
+"
+/>
+
+<Callout type="info">
+**案例**：医疗咨询场景下，"准确性"不仅是信息正确，更要符合医学伦理、避免误导性建议、包含必要的免责声明。
+</Callout>
+
+## 评分系统设计框架
+
+### 1. 需求分析
+
+```python
+class ScoringRequirements:
+    """评分需求分析框架"""
+    
+    def __init__(self, business_context):
+        self.context = business_context
+        self.requirements = self.analyze_requirements()
+    
+    def analyze_requirements(self):
+        """分析评分需求"""
+        return {
+            # 业务目标
+            'business_goals': {
+                'primary': 'customer_satisfaction',  # 主要目标
+                'secondary': ['efficiency', 'accuracy', 'compliance'],
+                'kpis': {
+                    'target_satisfaction': 4.5,
+                    'max_error_rate': 0.01,
+                    'response_time_ms': 1000
+                }
+            },
+            
+            # 评估维度
+            'dimensions': {
+                'quality': {
+                    'weight': 0.4,
+                    'components': ['accuracy', 'completeness', 'relevance']
+                },
+                'performance': {
+                    'weight': 0.2,
+                    'components': ['speed', 'efficiency']
+                },
+                'compliance': {
+                    'weight': 0.3,
+                    'components': ['legal', 'ethical', 'policy']
+                },
+                'user_experience': {
+                    'weight': 0.1,
+                    'components': ['clarity', 'tone', 'helpfulness']
+                }
+            },
+            
+            # 约束条件
+            'constraints': {
+                'must_have': ['no_harmful_content', 'data_privacy'],
+                'nice_to_have': ['personalization', 'multilingual'],
+                'computational': {
+                    'max_latency_ms': 100,
+                    'max_memory_mb': 512
+                }
+            },
+            
+            # 利益相关者
+            'stakeholders': {
+                'end_users': {'priority': 'high', 'focus': 'usability'},
+                'business': {'priority': 'high', 'focus': 'roi'},
+                'compliance': {'priority': 'medium', 'focus': 'regulations'},
+                'engineering': {'priority': 'medium', 'focus': 'maintainability'}
+            }
+        }
+```
+
+### 2. 评分模型设计
+
+<Tabs items={['规则基础', '机器学习', '混合模型', '层次化']}>
+  <Tab value="规则基础">
+    ```python
+    class RuleBasedScorer:
+        """基于规则的评分器"""
+        
+        def __init__(self):
+            self.rules = []
+            self.setup_rules()
+        
+        def setup_rules(self):
+            """定义评分规则"""
+            
+            # 硬性规则（违反直接扣分）
+            self.add_rule(
+                name="no_pii_exposure",
+                condition=lambda x: not self.contains_pii(x),
+                penalty=-1.0,  # 直接失败
+                priority=1
+            )
+            
+            # 质量规则
+            self.add_rule(
+                name="answer_completeness",
+                condition=lambda x: self.check_completeness(x),
+                score_func=lambda x: min(1.0, len(x.answer_parts) / x.expected_parts),
+                weight=0.3
+            )
+            
+            # 格式规则
+            self.add_rule(
+                name="proper_formatting",
+                condition=lambda x: self.check_format(x),
+                score_func=lambda x: self.format_score(x),
+                weight=0.1
+            )
+            
+            # 业务规则
+            self.add_rule(
+                name="includes_disclaimer",
+                condition=lambda x: "disclaimer" in x.metadata,
+                score_func=lambda x: 1.0 if x.has_disclaimer else 0.5,
+                weight=0.2
+            )
+        
+        def score(self, output):
+            """计算总分"""
+            total_score = 0
+            total_weight = 0
+            violations = []
+            
+            for rule in sorted(self.rules, key=lambda r: r.priority):
+                if rule.is_hard_rule:
+                    if not rule.condition(output):
+                        violations.append(rule.name)
+                        return {
+                            'score': 0,
+                            'violations': violations,
+                            'details': f"Failed hard rule: {rule.name}"
+                        }
+                else:
+                    if rule.condition(output):
+                        score = rule.score_func(output)
+                        total_score += score * rule.weight
+                        total_weight += rule.weight
+            
+            final_score = total_score / total_weight if total_weight > 0 else 0
+            
+            return {
+                'score': final_score,
+                'violations': violations,
+                'rule_scores': self.get_rule_scores(output)
+            }
+    ```
+  </Tab>
+  
+  <Tab value="机器学习">
+    ```python
+    class MLBasedScorer:
+        """基于机器学习的评分器"""
+        
+        def __init__(self, model_path=None):
+            self.model = self.load_or_train_model(model_path)
+            self.feature_extractor = FeatureExtractor()
+        
+        def train_model(self, training_data):
+            """训练评分模型"""
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.model_selection import train_test_split
+            
+            # 提取特征
+            X = []
+            y = []
+            
+            for sample in training_data:
+                features = self.feature_extractor.extract(sample['output'])
+                X.append(features)
+                y.append(sample['human_score'])
+            
+            # 分割数据
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+            
+            # 训练模型
+            self.model = RandomForestRegressor(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42
+            )
+            self.model.fit(X_train, y_train)
+            
+            # 评估模型
+            train_score = self.model.score(X_train, y_train)
+            test_score = self.model.score(X_test, y_test)
+            
+            return {
+                'train_r2': train_score,
+                'test_r2': test_score,
+                'feature_importance': self.get_feature_importance()
+            }
+        
+        def score(self, output):
+            """使用ML模型评分"""
+            features = self.feature_extractor.extract(output)
+            
+            # 预测分数
+            score = self.model.predict([features])[0]
+            
+            # 获取置信度（使用预测的标准差）
+            if hasattr(self.model, 'predict_std'):
+                confidence = 1 - self.model.predict_std([features])[0]
+            else:
+                # 使用集成模型的预测方差
+                predictions = [tree.predict([features])[0] 
+                              for tree in self.model.estimators_]
+                confidence = 1 - np.std(predictions)
+            
+            return {
+                'score': np.clip(score, 0, 1),
+                'confidence': confidence,
+                'top_features': self.get_top_contributing_features(features)
+            }
+    
+    class FeatureExtractor:
+        """特征提取器"""
+        
+        def extract(self, output):
+            """提取评分特征"""
+            features = {}
+            
+            # 文本特征
+            features['length'] = len(output.text)
+            features['num_sentences'] = self.count_sentences(output.text)
+            features['avg_word_length'] = self.avg_word_length(output.text)
+            features['vocabulary_diversity'] = self.vocabulary_diversity(output.text)
+            
+            # 语义特征
+            features['coherence_score'] = self.calculate_coherence(output.text)
+            features['relevance_score'] = self.calculate_relevance(
+                output.input, output.text
+            )
+            
+            # 结构特征
+            features['has_introduction'] = self.has_introduction(output.text)
+            features['has_conclusion'] = self.has_conclusion(output.text)
+            features['uses_examples'] = self.contains_examples(output.text)
+            
+            # 质量指标
+            features['grammar_score'] = self.check_grammar(output.text)
+            features['readability_score'] = self.calculate_readability(output.text)
+            
+            # 领域特定特征
+            features.update(self.extract_domain_features(output))
+            
+            return features
+    ```
+  </Tab>
+  
+  <Tab value="混合模型">
+    ```python
+    class HybridScorer:
+        """混合评分模型"""
+        
+        def __init__(self):
+            self.rule_scorer = RuleBasedScorer()
+            self.ml_scorer = MLBasedScorer()
+            self.llm_scorer = LLMScorer()
+            self.weight_optimizer = WeightOptimizer()
+        
+        def score(self, output, context=None):
+            """混合评分"""
+            
+            # 1. 规则评分（快速失败）
+            rule_result = self.rule_scorer.score(output)
+            if rule_result['score'] == 0:
+                return rule_result  # 违反硬性规则，直接返回
+            
+            # 2. ML评分（快速评估）
+            ml_result = self.ml_scorer.score(output)
+            
+            # 3. 决定是否需要LLM评分
+            if self.needs_llm_evaluation(ml_result, context):
+                llm_result = self.llm_scorer.score(output, context)
+            else:
+                llm_result = None
+            
+            # 4. 动态权重组合
+            weights = self.weight_optimizer.get_weights(
+                output_type=output.type,
+                confidence={
+                    'rule': 1.0,  # 规则总是确定的
+                    'ml': ml_result['confidence'],
+                    'llm': llm_result['confidence'] if llm_result else 0
+                }
+            )
+            
+            # 5. 计算最终分数
+            final_score = (
+                weights['rule'] * rule_result['score'] +
+                weights['ml'] * ml_result['score']
+            )
+            
+            if llm_result:
+                final_score += weights['llm'] * llm_result['score']
+                final_score /= (weights['rule'] + weights['ml'] + weights['llm'])
+            else:
+                final_score /= (weights['rule'] + weights['ml'])
+            
+            return {
+                'score': final_score,
+                'components': {
+                    'rule': rule_result,
+                    'ml': ml_result,
+                    'llm': llm_result
+                },
+                'weights': weights,
+                'explanation': self.generate_explanation(
+                    rule_result, ml_result, llm_result, weights
+                )
+            }
+        
+        def needs_llm_evaluation(self, ml_result, context):
+            """判断是否需要LLM评估"""
+            
+            # 低置信度时使用LLM
+            if ml_result['confidence'] < 0.7:
+                return True
+            
+            # 高价值场景使用LLM
+            if context and context.get('high_value', False):
+                return True
+            
+            # 边界分数使用LLM
+            if 0.4 < ml_result['score'] < 0.6:
+                return True
+            
+            return False
+    ```
+  </Tab>
+  
+  <Tab value="层次化">
+    ```python
+    class HierarchicalScorer:
+        """层次化评分模型"""
+        
+        def __init__(self):
+            self.levels = self.define_hierarchy()
+        
+        def define_hierarchy(self):
+            """定义评分层次"""
+            return {
+                'L1_basic': {
+                    'scorers': [SafetyScorer(), GrammarScorer()],
+                    'threshold': 0.5,  # 必须通过才能进入下一层
+                    'weight': 0.2
+                },
+                'L2_quality': {
+                    'scorers': [AccuracyScorer(), RelevanceScorer()],
+                    'threshold': 0.6,
+                    'weight': 0.4
+                },
+                'L3_advanced': {
+                    'scorers': [CreativityScorer(), InsightScorer()],
+                    'threshold': 0.7,
+                    'weight': 0.3
+                },
+                'L4_excellence': {
+                    'scorers': [ExpertScorer(), ImpactScorer()],
+                    'threshold': None,  # 可选层
+                    'weight': 0.1
+                }
+            }
+        
+        def score(self, output):
+            """层次化评分"""
+            
+            level_scores = {}
+            cumulative_score = 0
+            total_weight = 0
+            
+            for level_name, level_config in self.levels.items():
+                # 评估当前层
+                level_score = self.evaluate_level(
+                    output, 
+                    level_config['scorers']
+                )
+                
+                level_scores[level_name] = level_score
+                
+                # 检查是否达到阈值
+                if level_config['threshold'] and level_score < level_config['threshold']:
+                    # 未达到阈值，停止评估
+                    return {
+                        'score': cumulative_score / total_weight if total_weight > 0 else 0,
+                        'max_level_reached': level_name,
+                        'level_scores': level_scores,
+                        'feedback': f"Failed to meet {level_name} threshold"
+                    }
+                
+                # 累加分数
+                cumulative_score += level_score * level_config['weight']
+                total_weight += level_config['weight']
+            
+            return {
+                'score': cumulative_score / total_weight,
+                'max_level_reached': 'L4_excellence',
+                'level_scores': level_scores,
+                'achievements': self.get_achievements(level_scores)
+            }
+        
+        def evaluate_level(self, output, scorers):
+            """评估单个层次"""
+            scores = []
+            for scorer in scorers:
+                score = scorer.score(output)
+                scores.append(score)
+            
+            # 使用几何平均（所有维度都重要）
+            return np.prod(scores) ** (1/len(scores))
+    ```
+  </Tab>
+</Tabs>
+
+## 领域特定评分实现
+
+### 1. 客服对话评分
+
+```python
+class CustomerServiceScorer:
+    """客服对话专用评分器"""
+    
+    def __init__(self):
+        self.empathy_detector = EmpathyDetector()
+        self.solution_extractor = SolutionExtractor()
+        self.tone_analyzer = ToneAnalyzer()
+    
+    def score(self, conversation):
+        """评分客服对话"""
+        
+        scores = {}
+        
+        # 1. 问题解决度
+        scores['problem_resolution'] = self.evaluate_resolution(conversation)
+        
+        # 2. 响应及时性
+        scores['responsiveness'] = self.evaluate_responsiveness(conversation)
+        
+        # 3. 同理心
+        scores['empathy'] = self.empathy_detector.score(conversation)
+        
+        # 4. 专业性
+        scores['professionalism'] = self.evaluate_professionalism(conversation)
+        
+        # 5. 客户满意预测
+        scores['predicted_satisfaction'] = self.predict_satisfaction(conversation)
+        
+        # 加权计算总分
+        weights = {
+            'problem_resolution': 0.35,
+            'responsiveness': 0.15,
+            'empathy': 0.20,
+            'professionalism': 0.15,
+            'predicted_satisfaction': 0.15
+        }
+        
+        total_score = sum(scores[k] * weights[k] for k in weights)
+        
+        return {
+            'total_score': total_score,
+            'breakdown': scores,
+            'recommendations': self.generate_recommendations(scores),
+            'escalation_needed': self.check_escalation(conversation, scores)
+        }
+    
+    def evaluate_resolution(self, conversation):
+        """评估问题解决度"""
+        
+        # 提取客户问题
+        issues = self.solution_extractor.extract_issues(conversation)
+        
+        # 提取提供的解决方案
+        solutions = self.solution_extractor.extract_solutions(conversation)
+        
+        # 匹配问题和解决方案
+        resolution_rate = len(solutions) / len(issues) if issues else 1.0
+        
+        # 检查客户确认
+        customer_confirmed = self.check_customer_confirmation(conversation)
+        
+        # 综合评分
+        score = resolution_rate * 0.7
+        if customer_confirmed:
+            score += 0.3
+        
+        return min(score, 1.0)
+```
+
+### 2. 代码生成评分
+
+```python
+class CodeGenerationScorer:
+    """代码生成评分器"""
+    
+    def __init__(self):
+        self.syntax_checker = SyntaxChecker()
+        self.test_runner = TestRunner()
+        self.quality_analyzer = CodeQualityAnalyzer()
+    
+    def score(self, code_output, requirements):
+        """评分生成的代码"""
+        
+        evaluation = {
+            'syntax': self.check_syntax(code_output),
+            'functionality': self.test_functionality(code_output, requirements),
+            'quality': self.analyze_quality(code_output),
+            'security': self.check_security(code_output),
+            'performance': self.benchmark_performance(code_output)
+        }
+        
+        # 层次化评分
+        if evaluation['syntax']['valid'] == False:
+            return {
+                'score': 0,
+                'error': 'Syntax error',
+                'details': evaluation['syntax']['errors']
+            }
+        
+        if evaluation['functionality']['passing_rate'] < 0.5:
+            return {
+                'score': evaluation['functionality']['passing_rate'] * 0.3,
+                'error': 'Functionality issues',
+                'details': evaluation['functionality']
+            }
+        
+        # 计算质量分数
+        quality_score = (
+            evaluation['functionality']['passing_rate'] * 0.4 +
+            evaluation['quality']['score'] * 0.3 +
+            evaluation['security']['score'] * 0.2 +
+            evaluation['performance']['score'] * 0.1
+        )
+        
+        return {
+            'score': quality_score,
+            'evaluation': evaluation,
+            'suggestions': self.generate_improvement_suggestions(evaluation)
+        }
+    
+    def test_functionality(self, code, requirements):
+        """测试功能正确性"""
+        
+        test_results = []
+        
+        for test_case in requirements['test_cases']:
+            try:
+                result = self.test_runner.run(
+                    code, 
+                    test_case['input'], 
+                    test_case['expected_output']
+                )
+                test_results.append(result)
+            except Exception as e:
+                test_results.append({
+                    'passed': False,
+                    'error': str(e)
+                })
+        
+        passing_rate = sum(1 for r in test_results if r['passed']) / len(test_results)
+        
+        return {
+            'passing_rate': passing_rate,
+            'test_results': test_results
+        }
+```
+
+### 3. 教育内容评分
+
+```python
+class EducationalContentScorer:
+    """教育内容评分器"""
+    
+    def __init__(self):
+        self.pedagogy_analyzer = PedagogyAnalyzer()
+        self.clarity_checker = ClarityChecker()
+        self.engagement_predictor = EngagementPredictor()
+    
+    def score(self, content, target_audience):
+        """评分教育内容"""
+        
+        dimensions = {}
+        
+        # 1. 教学法质量
+        dimensions['pedagogy'] = self.evaluate_pedagogy(content, target_audience)
+        
+        # 2. 内容准确性
+        dimensions['accuracy'] = self.verify_content_accuracy(content)
+        
+        # 3. 适龄性
+        dimensions['age_appropriateness'] = self.check_age_appropriateness(
+            content, 
+            target_audience['age_range']
+        )
+        
+        # 4. 参与度预测
+        dimensions['engagement'] = self.engagement_predictor.predict(
+            content,
+            target_audience
+        )
+        
+        # 5. 学习目标对齐
+        dimensions['objective_alignment'] = self.check_learning_objectives(
+            content,
+            target_audience['learning_objectives']
+        )
+        
+        # 动态权重（根据受众调整）
+        weights = self.calculate_dynamic_weights(target_audience)
+        
+        total_score = sum(
+            dimensions[dim] * weights[dim] 
+            for dim in dimensions
+        )
+        
+        return {
+            'score': total_score,
+            'dimensions': dimensions,
+            'recommendations': self.generate_pedagogical_recommendations(
+                dimensions,
+                target_audience
+            ),
+            'difficulty_level': self.assess_difficulty(content, target_audience)
+        }
+    
+    def evaluate_pedagogy(self, content, target_audience):
+        """评估教学法质量"""
+        
+        pedagogy_score = 0
+        
+        # 检查学习脚手架
+        if self.has_scaffolding(content):
+            pedagogy_score += 0.2
+        
+        # 检查示例使用
+        example_quality = self.assess_examples(content)
+        pedagogy_score += example_quality * 0.3
+        
+        # 检查互动元素
+        if self.has_interactive_elements(content):
+            pedagogy_score += 0.2
+        
+        # 检查总结和复习
+        if self.has_summary(content):
+            pedagogy_score += 0.15
+        
+        # 检查差异化教学
+        if self.supports_differentiation(content, target_audience):
+            pedagogy_score += 0.15
+        
+        return min(pedagogy_score, 1.0)
+```
+
+## 评分校准与优化
+
+### 评分一致性校准
+
+```python
+class ScoreCalibrator:
+    """评分校准器"""
+    
+    def __init__(self):
+        self.calibration_data = []
+        self.calibration_model = None
+    
+    def collect_calibration_data(self, scorer_output, human_score):
+        """收集校准数据"""
+        self.calibration_data.append({
+            'scorer_output': scorer_output,
+            'human_score': human_score,
+            'timestamp': datetime.now()
+        })
+    
+    def calibrate(self):
+        """校准评分器"""
+        
+        if len(self.calibration_data) < 100:
+            return {
+                'status': 'insufficient_data',
+                'required': 100,
+                'current': len(self.calibration_data)
+            }
+        
+        # 提取数据
+        X = [d['scorer_output']['score'] for d in self.calibration_data]
+        y = [d['human_score'] for d in self.calibration_data]
+        
+        # 训练校准模型（使用isotonic回归）
+        from sklearn.isotonic import IsotonicRegression
+        
+        self.calibration_model = IsotonicRegression(
+            out_of_bounds='clip'
+        )
+        self.calibration_model.fit(X, y)
+        
+        # 评估校准效果
+        calibrated_scores = self.calibration_model.predict(X)
+        
+        metrics = {
+            'mse_before': np.mean((np.array(X) - np.array(y)) ** 2),
+            'mse_after': np.mean((calibrated_scores - np.array(y)) ** 2),
+            'correlation_before': np.corrcoef(X, y)[0, 1],
+            'correlation_after': np.corrcoef(calibrated_scores, y)[0, 1]
+        }
+        
+        return {
+            'status': 'calibrated',
+            'metrics': metrics,
+            'improvement': (metrics['mse_before'] - metrics['mse_after']) / metrics['mse_before']
+        }
+    
+    def apply_calibration(self, raw_score):
+        """应用校准"""
+        if self.calibration_model is None:
+            return raw_score
+        
+        calibrated = self.calibration_model.predict([raw_score])[0]
+        return calibrated
+```
+
+### 动态权重优化
+
+```python
+class DynamicWeightOptimizer:
+    """动态权重优化器"""
+    
+    def __init__(self):
+        self.performance_history = defaultdict(list)
+        self.current_weights = {}
+    
+    def optimize_weights(self, feedback_data):
+        """基于反馈优化权重"""
+        
+        # 定义优化目标
+        def objective(weights):
+            """最小化预测误差"""
+            predictions = []
+            actuals = []
+            
+            for sample in feedback_data:
+                # 使用给定权重计算预测分数
+                pred_score = sum(
+                    weights[i] * sample['component_scores'][i]
+                    for i in range(len(weights))
+                )
+                predictions.append(pred_score)
+                actuals.append(sample['actual_score'])
+            
+            # 计算MSE
+            mse = np.mean((np.array(predictions) - np.array(actuals)) ** 2)
+            return mse
+        
+        # 约束条件
+        constraints = [
+            {'type': 'eq', 'fun': lambda w: sum(w) - 1},  # 权重和为1
+            {'type': 'ineq', 'fun': lambda w: w}  # 权重非负
+        ]
+        
+        # 初始权重
+        n_components = len(feedback_data[0]['component_scores'])
+        initial_weights = np.ones(n_components) / n_components
+        
+        # 优化
+        from scipy.optimize import minimize
+        
+        result = minimize(
+            objective,
+            initial_weights,
+            method='SLSQP',
+            constraints=constraints,
+            bounds=[(0, 1) for _ in range(n_components)]
+        )
+        
+        optimized_weights = result.x
+        
+        return {
+            'weights': optimized_weights.tolist(),
+            'improvement': 1 - result.fun / objective(initial_weights),
+            'convergence': result.success
+        }
+```
+
+## 评分解释性
+
+### 可解释评分系统
+
+```python
+class ExplainableScorer:
+    """可解释的评分系统"""
+    
+    def __init__(self):
+        self.scorer = CustomScorer()
+        self.explainer = ScoreExplainer()
+    
+    def score_with_explanation(self, output):
+        """评分并生成解释"""
+        
+        # 获取详细评分
+        score_result = self.scorer.detailed_score(output)
+        
+        # 生成解释
+        explanation = self.explainer.explain(
+            score_result,
+            output
+        )
+        
+        return {
+            'score': score_result['final_score'],
+            'explanation': explanation,
+            'visual': self.generate_visual_explanation(score_result)
+        }
+    
+    def generate_visual_explanation(self, score_result):
+        """生成可视化解释"""
+        
+        import plotly.graph_objects as go
+        
+        # 创建雷达图
+        categories = list(score_result['dimensions'].keys())
+        values = [score_result['dimensions'][c] for c in categories]
+        
+        fig = go.Figure(data=go.Scatterpolar(
+            r=values,
+            theta=categories,
+            fill='toself',
+            name='Score Profile'
+        ))
+        
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 1]
+                )),
+            showlegend=False,
+            title="评分维度分析"
+        )
+        
+        return fig.to_json()
+
+class ScoreExplainer:
+    """评分解释器"""
+    
+    def explain(self, score_result, output):
+        """生成自然语言解释"""
+        
+        explanation = {
+            'summary': self.generate_summary(score_result),
+            'strengths': self.identify_strengths(score_result),
+            'weaknesses': self.identify_weaknesses(score_result),
+            'suggestions': self.generate_suggestions(score_result, output),
+            'confidence': self.explain_confidence(score_result)
+        }
+        
+        # 生成完整解释文本
+        full_explanation = f"""
+        评分：{score_result['final_score']:.2f}/1.00
+        
+        总体评价：{explanation['summary']}
+        
+        优势：
+        {self.format_list(explanation['strengths'])}
+        
+        不足：
+        {self.format_list(explanation['weaknesses'])}
+        
+        改进建议：
+        {self.format_list(explanation['suggestions'])}
+        
+        置信度：{explanation['confidence']}
+        """
+        
+        return {
+            'structured': explanation,
+            'text': full_explanation,
+            'key_factors': self.extract_key_factors(score_result)
+        }
+    
+    def extract_key_factors(self, score_result):
+        """提取关键影响因素"""
+        
+        factors = []
+        
+        for dimension, score in score_result['dimensions'].items():
+            impact = abs(score - score_result['final_score'])
+            
+            if impact > 0.1:
+                factors.append({
+                    'dimension': dimension,
+                    'score': score,
+                    'impact': impact,
+                    'direction': 'positive' if score > score_result['final_score'] else 'negative'
+                })
+        
+        # 按影响度排序
+        factors.sort(key=lambda x: x['impact'], reverse=True)
+        
+        return factors[:3]  # 返回top 3影响因素
+```
+
+## 评分系统监控
+
+```python
+class ScoringSystemMonitor:
+    """评分系统监控"""
+    
+    def __init__(self):
+        self.metrics = defaultdict(list)
+        self.alerts = []
+    
+    def monitor(self, scoring_event):
+        """监控评分事件"""
+        
+        # 记录指标
+        self.metrics['scores'].append(scoring_event['score'])
+        self.metrics['latencies'].append(scoring_event['latency'])
+        self.metrics['timestamps'].append(scoring_event['timestamp'])
+        
+        # 检查异常
+        anomalies = self.detect_anomalies(scoring_event)
+        if anomalies:
+            self.handle_anomalies(anomalies)
+        
+        # 生成实时报告
+        return self.generate_report()
+    
+    def detect_anomalies(self, event):
+        """检测异常"""
+        
+        anomalies = []
+        
+        # 分数异常
+        recent_scores = self.metrics['scores'][-100:]
+        if recent_scores:
+            mean = np.mean(recent_scores)
+            std = np.std(recent_scores)
+            
+            if abs(event['score'] - mean) > 3 * std:
+                anomalies.append({
+                    'type': 'score_outlier',
+                    'value': event['score'],
+                    'expected_range': (mean - 2*std, mean + 2*std)
+                })
+        
+        # 性能异常
+        if event['latency'] > 1000:  # 超过1秒
+            anomalies.append({
+                'type': 'high_latency',
+                'value': event['latency'],
+                'threshold': 1000
+            })
+        
+        # 趋势异常
+        if len(self.metrics['scores']) > 50:
+            trend = self.detect_trend_change()
+            if trend:
+                anomalies.append(trend)
+        
+        return anomalies
+    
+    def generate_report(self):
+        """生成监控报告"""
+        
+        if not self.metrics['scores']:
+            return {'status': 'no_data'}
+        
+        return {
+            'summary': {
+                'total_evaluations': len(self.metrics['scores']),
+                'average_score': np.mean(self.metrics['scores']),
+                'score_std': np.std(self.metrics['scores']),
+                'average_latency': np.mean(self.metrics['latencies']),
+                'alerts_count': len(self.alerts)
+            },
+            'trends': {
+                'score_trend': self.calculate_trend(self.metrics['scores']),
+                'latency_trend': self.calculate_trend(self.metrics['latencies'])
+            },
+            'health_status': self.assess_health(),
+            'recommendations': self.generate_recommendations()
+        }
+```
+
+## 最佳实践
+
+<Cards>
+  <Card title="从简单开始">
+    先实现基础规则评分，逐步添加复杂度
+  </Card>
+  
+  <Card title="持续校准">
+    定期用人工评分校准自动评分系统
+  </Card>
+  
+  <Card title="多维度评估">
+    不要依赖单一分数，提供多维度的评估视角
+  </Card>
+  
+  <Card title="可解释性">
+    确保评分可以被解释和审计
+  </Card>
+</Cards>
+
+## 关键要点
+
+- ✅ 自定义评分需要深入理解业务需求
+- ✅ 混合多种评分方法可以提高准确性
+- ✅ 评分系统需要持续监控和优化
+- ✅ 可解释性对于建立信任至关重要
+- ✅ 动态调整权重可以适应变化的需求

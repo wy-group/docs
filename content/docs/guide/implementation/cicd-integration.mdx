@@ -1,0 +1,1101 @@
+---
+title: CI/CD 集成
+description: 将 LLM 评估无缝集成到持续集成和持续部署流程中
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# CI/CD 集成
+
+将 LLM 评估集成到 CI/CD 流程中，确保每次代码变更和模型更新都经过严格的质量把关。
+
+## CI/CD 评估策略
+
+### 整体流程设计
+
+<Mermaid
+  chart="
+graph LR
+    A[代码提交] --> B[CI触发]
+    B --> C[单元测试]
+    C --> D[LLM评估测试]
+    D --> E{质量门槛}
+    E -->|通过| F[构建镜像]
+    E -->|失败| G[拒绝合并]
+    F --> H[部署到测试环境]
+    H --> I[集成测试]
+    I --> J[性能测试]
+    J --> K{发布决策}
+    K -->|批准| L[生产部署]
+    K -->|拒绝| M[回滚]
+    L --> N[生产监控]
+    N --> O[持续评估]
+"
+/>
+
+## GitHub Actions 集成
+
+### 基础工作流配置
+
+```yaml
+# .github/workflows/llm-evaluation.yml
+name: LLM Evaluation Pipeline
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      evaluation_level:
+        description: 'Evaluation depth level'
+        required: true
+        default: 'standard'
+        type: choice
+        options:
+          - quick
+          - standard
+          - comprehensive
+
+env:
+  PYTHON_VERSION: '3.9'
+  NODE_VERSION: '18'
+  EVALUATION_THRESHOLD: 0.85
+
+jobs:
+  # 1. 代码质量检查
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      
+      - name: Run linting
+        run: |
+          flake8 . --config=.flake8
+          black . --check
+          isort . --check-only
+      
+      - name: Type checking
+        run: mypy . --config-file=mypy.ini
+      
+      - name: Security scanning
+        run: |
+          pip install bandit safety
+          bandit -r . -f json -o bandit-report.json
+          safety check --json > safety-report.json
+      
+      - name: Upload reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: code-quality-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+
+  # 2. LLM单元测试
+  llm-unit-tests:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    strategy:
+      matrix:
+        test-suite: [quality, performance, safety]
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup test environment
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          ./scripts/wait-for-services.sh
+      
+      - name: Run ${{ matrix.test-suite }} tests
+        env:
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+          TEST_SUITE: ${{ matrix.test-suite }}
+        run: |
+          pytest tests/unit/${{ matrix.test-suite }} \
+            --junitxml=test-results-${{ matrix.test-suite }}.xml \
+            --cov=llm_evaluator \
+            --cov-report=xml:coverage-${{ matrix.test-suite }}.xml
+      
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results-${{ matrix.test-suite }}.xml
+          check_name: LLM Unit Tests - ${{ matrix.test-suite }}
+      
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: coverage-${{ matrix.test-suite }}.xml
+          flags: ${{ matrix.test-suite }}
+
+  # 3. LLM质量评估
+  llm-quality-evaluation:
+    runs-on: ubuntu-latest
+    needs: llm-unit-tests
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup evaluation environment
+        run: |
+          pip install -r requirements-eval.txt
+          ./scripts/download-test-datasets.sh
+      
+      - name: Run quality evaluation
+        id: quality-eval
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LANGFUSE_API_KEY: ${{ secrets.LANGFUSE_API_KEY }}
+        run: |
+          python scripts/evaluate_quality.py \
+            --config configs/evaluation.yaml \
+            --output evaluation-report.json
+          
+          # 提取关键指标
+          QUALITY_SCORE=$(jq '.overall_quality_score' evaluation-report.json)
+          echo "quality_score=$QUALITY_SCORE" >> $GITHUB_OUTPUT
+          
+          # 检查质量门槛
+          python -c "
+          import sys
+          score = float('$QUALITY_SCORE')
+          threshold = float('${{ env.EVALUATION_THRESHOLD }}')
+          if score < threshold:
+              print(f'❌ Quality score {score:.2f} below threshold {threshold:.2f}')
+              sys.exit(1)
+          else:
+              print(f'✅ Quality score {score:.2f} meets threshold {threshold:.2f}')
+          "
+      
+      - name: Generate evaluation report
+        run: |
+          python scripts/generate_html_report.py \
+            --input evaluation-report.json \
+            --output evaluation-report.html
+      
+      - name: Upload evaluation artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: evaluation-reports
+          path: |
+            evaluation-report.json
+            evaluation-report.html
+      
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('evaluation-report.json', 'utf8'));
+            
+            const comment = `## 🤖 LLM Evaluation Results
+            
+            **Overall Quality Score**: ${report.overall_quality_score.toFixed(2)} / 1.00
+            
+            ### Metrics Breakdown
+            | Metric | Score | Threshold | Status |
+            |--------|-------|-----------|--------|
+            | Accuracy | ${report.accuracy.toFixed(2)} | 0.85 | ${report.accuracy >= 0.85 ? '✅' : '❌'} |
+            | Relevance | ${report.relevance.toFixed(2)} | 0.80 | ${report.relevance >= 0.80 ? '✅' : '❌'} |
+            | Safety | ${report.safety.toFixed(2)} | 0.95 | ${report.safety >= 0.95 ? '✅' : '❌'} |
+            | Latency (p95) | ${report.latency_p95}ms | <1000ms | ${report.latency_p95 < 1000 ? '✅' : '❌'} |
+            
+            [View Full Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # 4. 性能基准测试
+  performance-benchmark:
+    runs-on: ubuntu-latest
+    needs: llm-quality-evaluation
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Run performance benchmarks
+        run: |
+          python scripts/run_benchmarks.py \
+            --config configs/benchmark.yaml \
+            --output benchmark-results.json
+      
+      - name: Compare with baseline
+        id: benchmark-compare
+        run: |
+          python scripts/compare_benchmarks.py \
+            --current benchmark-results.json \
+            --baseline benchmarks/baseline.json \
+            --tolerance 0.1
+      
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: 'customBiggerIsBetter'
+          output-file-path: benchmark-results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '110%'
+          comment-on-alert: true
+          fail-on-alert: true
+
+  # 5. 安全性扫描
+  security-evaluation:
+    runs-on: ubuntu-latest
+    needs: llm-quality-evaluation
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Run prompt injection tests
+        run: |
+          python scripts/test_prompt_injection.py \
+            --test-suite data/security/prompt-injections.json \
+            --output prompt-injection-report.json
+      
+      - name: Run data leakage tests
+        run: |
+          python scripts/test_data_leakage.py \
+            --test-suite data/security/pii-tests.json \
+            --output data-leakage-report.json
+      
+      - name: Run bias detection
+        run: |
+          python scripts/test_bias.py \
+            --test-suite data/fairness/bias-tests.json \
+            --output bias-report.json
+      
+      - name: Aggregate security results
+        run: |
+          python scripts/aggregate_security_results.py \
+            --reports "prompt-injection-report.json,data-leakage-report.json,bias-report.json" \
+            --output security-summary.json
+          
+          # 检查安全标准
+          python -c "
+          import json
+          with open('security-summary.json') as f:
+              summary = json.load(f)
+          if summary['critical_issues'] > 0:
+              print(f'❌ Found {summary[\"critical_issues\"]} critical security issues')
+              exit(1)
+          print('✅ No critical security issues found')
+          "
+
+  # 6. 模型A/B测试
+  model-ab-testing:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [llm-quality-evaluation, security-evaluation]
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to staging
+        env:
+          STAGING_KUBECONFIG: ${{ secrets.STAGING_KUBECONFIG }}
+        run: |
+          echo "$STAGING_KUBECONFIG" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+          
+          # 部署新版本到staging（50%流量）
+          kubectl apply -f k8s/staging/deployment-canary.yaml
+          kubectl set image deployment/llm-service \
+            llm-service=llm-service:${{ github.sha }} \
+            -n staging
+      
+      - name: Run A/B test
+        run: |
+          python scripts/run_ab_test.py \
+            --duration 3600 \
+            --traffic-split 50 \
+            --metrics "quality,latency,error_rate" \
+            --output ab-test-results.json
+      
+      - name: Analyze A/B results
+        id: ab-analysis
+        run: |
+          python scripts/analyze_ab_results.py \
+            --results ab-test-results.json \
+            --confidence 0.95 \
+            --output ab-analysis.json
+          
+          # 决定是否继续部署
+          WINNER=$(jq -r '.winner' ab-analysis.json)
+          if [ "$WINNER" = "variant" ]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+  # 7. 生产部署
+  production-deployment:
+    runs-on: ubuntu-latest
+    needs: model-ab-testing
+    if: needs.model-ab-testing.outputs.should_deploy == 'true'
+    environment:
+      name: production
+      url: https://api.production.example.com
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to production
+        env:
+          PROD_KUBECONFIG: ${{ secrets.PROD_KUBECONFIG }}
+        run: |
+          echo "$PROD_KUBECONFIG" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+          
+          # 蓝绿部署
+          ./scripts/blue-green-deploy.sh \
+            --image llm-service:${{ github.sha }} \
+            --namespace production
+      
+      - name: Smoke tests
+        run: |
+          python scripts/smoke_tests.py \
+            --endpoint https://api.production.example.com \
+            --tests configs/smoke-tests.yaml
+      
+      - name: Update monitoring
+        run: |
+          python scripts/update_monitoring.py \
+            --version ${{ github.sha }} \
+            --dashboard-id ${{ secrets.GRAFANA_DASHBOARD_ID }}
+```
+
+## GitLab CI 集成
+
+```yaml
+# .gitlab-ci.yml
+stages:
+  - test
+  - evaluate
+  - build
+  - deploy
+  - monitor
+
+variables:
+  DOCKER_REGISTRY: registry.gitlab.com
+  EVALUATION_THRESHOLD: "0.85"
+  PERFORMANCE_THRESHOLD: "1000"  # ms
+
+# 模板定义
+.evaluation_template:
+  image: python:3.9
+  before_script:
+    - pip install -r requirements-eval.txt
+    - export PYTHONPATH=$CI_PROJECT_DIR
+  artifacts:
+    reports:
+      junit: test-results.xml
+    paths:
+      - evaluation-reports/
+    expire_in: 1 week
+
+# 单元测试阶段
+unit-tests:
+  stage: test
+  extends: .evaluation_template
+  script:
+    - pytest tests/unit --junitxml=test-results.xml
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+
+# LLM评估阶段
+llm-evaluation:
+  stage: evaluate
+  extends: .evaluation_template
+  script:
+    - |
+      python scripts/run_evaluation.py \
+        --test-suite comprehensive \
+        --output evaluation-reports/
+      
+      # 检查质量门槛
+      QUALITY_SCORE=$(cat evaluation-reports/summary.json | jq '.quality_score')
+      if (( $(echo "$QUALITY_SCORE < $EVALUATION_THRESHOLD" | bc -l) )); then
+        echo "Quality score $QUALITY_SCORE below threshold $EVALUATION_THRESHOLD"
+        exit 1
+      fi
+  only:
+    - merge_requests
+    - main
+
+# 性能测试
+performance-test:
+  stage: evaluate
+  extends: .evaluation_template
+  script:
+    - |
+      python scripts/performance_test.py \
+        --scenarios configs/performance-scenarios.yaml \
+        --output performance-report.json
+      
+      # 检查性能指标
+      P95_LATENCY=$(cat performance-report.json | jq '.p95_latency')
+      if (( $(echo "$P95_LATENCY > $PERFORMANCE_THRESHOLD" | bc -l) )); then
+        echo "P95 latency ${P95_LATENCY}ms exceeds threshold ${PERFORMANCE_THRESHOLD}ms"
+        exit 1
+      fi
+  only:
+    - merge_requests
+    - main
+
+# 构建Docker镜像
+build-image:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t $DOCKER_REGISTRY/$CI_PROJECT_PATH:$CI_COMMIT_SHA .
+    - docker push $DOCKER_REGISTRY/$CI_PROJECT_PATH:$CI_COMMIT_SHA
+    - docker tag $DOCKER_REGISTRY/$CI_PROJECT_PATH:$CI_COMMIT_SHA $DOCKER_REGISTRY/$CI_PROJECT_PATH:latest
+    - docker push $DOCKER_REGISTRY/$CI_PROJECT_PATH:latest
+  only:
+    - main
+
+# 部署到测试环境
+deploy-staging:
+  stage: deploy
+  environment:
+    name: staging
+    url: https://staging.example.com
+  script:
+    - |
+      helm upgrade --install llm-service charts/llm-service \
+        --namespace staging \
+        --set image.tag=$CI_COMMIT_SHA \
+        --set evaluation.enabled=true \
+        --wait
+  only:
+    - main
+
+# 生产部署（手动触发）
+deploy-production:
+  stage: deploy
+  environment:
+    name: production
+    url: https://api.example.com
+  when: manual
+  script:
+    - |
+      # 金丝雀部署
+      helm upgrade --install llm-service charts/llm-service \
+        --namespace production \
+        --set image.tag=$CI_COMMIT_SHA \
+        --set canary.enabled=true \
+        --set canary.weight=10 \
+        --wait
+      
+      # 等待并监控
+      sleep 300
+      python scripts/check_canary_metrics.py
+      
+      # 如果成功，完全部署
+      helm upgrade llm-service charts/llm-service \
+        --namespace production \
+        --set image.tag=$CI_COMMIT_SHA \
+        --set canary.enabled=false \
+        --wait
+  only:
+    - main
+
+# 生产监控
+production-monitoring:
+  stage: monitor
+  script:
+    - |
+      python scripts/production_monitoring.py \
+        --duration 3600 \
+        --metrics "quality,performance,errors" \
+        --alert-threshold 0.95
+  only:
+    - schedules
+```
+
+## Jenkins Pipeline
+
+```groovy
+// Jenkinsfile
+@Library('llm-evaluation-lib') _
+
+pipeline {
+    agent any
+    
+    environment {
+        EVALUATION_THRESHOLD = '0.85'
+        DOCKER_REGISTRY = 'registry.example.com'
+        SLACK_CHANNEL = '#llm-deployments'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: "git rev-parse --short HEAD",
+                        returnStdout: true
+                    ).trim()
+                }
+            }
+        }
+        
+        stage('Parallel Tests') {
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        sh 'pytest tests/unit --junitxml=unit-test-results.xml'
+                        junit 'unit-test-results.xml'
+                    }
+                }
+                
+                stage('Integration Tests') {
+                    steps {
+                        sh 'pytest tests/integration --junitxml=integration-test-results.xml'
+                        junit 'integration-test-results.xml'
+                    }
+                }
+                
+                stage('LLM Quality Tests') {
+                    steps {
+                        script {
+                            def qualityScore = llmEvaluation(
+                                testSuite: 'comprehensive',
+                                model: params.MODEL_VERSION,
+                                threshold: env.EVALUATION_THRESHOLD
+                            )
+                            
+                            if (qualityScore < env.EVALUATION_THRESHOLD.toFloat()) {
+                                error("Quality score ${qualityScore} below threshold")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Security Scanning') {
+            steps {
+                script {
+                    // 提示注入测试
+                    sh 'python scripts/security/prompt_injection_test.py'
+                    
+                    // PII泄露测试
+                    sh 'python scripts/security/pii_leakage_test.py'
+                    
+                    // 依赖安全扫描
+                    sh 'safety check --json > safety-report.json'
+                    
+                    // SAST扫描
+                    sh 'semgrep --config=auto --json > semgrep-report.json'
+                }
+            }
+        }
+        
+        stage('Build and Push') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-credentials') {
+                        def app = docker.build("llm-service:${env.GIT_COMMIT_SHORT}")
+                        app.push()
+                        app.push('latest')
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Staging') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    // 部署到staging
+                    sh """
+                        kubectl set image deployment/llm-service \
+                            llm-service=${DOCKER_REGISTRY}/llm-service:${env.GIT_COMMIT_SHORT} \
+                            -n staging
+                    """
+                    
+                    // 等待部署完成
+                    sh "kubectl rollout status deployment/llm-service -n staging"
+                    
+                    // 运行冒烟测试
+                    sh "python scripts/smoke_tests.py --env staging"
+                }
+            }
+        }
+        
+        stage('Performance Testing') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    // 运行性能测试
+                    sh """
+                        python scripts/performance_test.py \
+                            --endpoint https://staging.example.com \
+                            --duration 600 \
+                            --concurrent-users 50
+                    """
+                    
+                    // 发布性能报告
+                    publishHTML(target: [
+                        allowMissing: false,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'performance-reports',
+                        reportFiles: 'index.html',
+                        reportName: 'Performance Report'
+                    ])
+                }
+            }
+        }
+        
+        stage('Production Approval') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    // 生成部署报告
+                    def report = generateDeploymentReport()
+                    
+                    // 发送Slack通知
+                    slackSend(
+                        channel: env.SLACK_CHANNEL,
+                        message: """
+                        🚀 *Production Deployment Request*
+                        Version: ${env.GIT_COMMIT_SHORT}
+                        Quality Score: ${report.qualityScore}
+                        Performance: ${report.performanceMetrics}
+                        
+                        Approve: ${env.BUILD_URL}input
+                        """
+                    )
+                    
+                    // 等待批准
+                    input message: 'Deploy to production?', ok: 'Deploy'
+                }
+            }
+        }
+        
+        stage('Production Deployment') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    // 蓝绿部署
+                    blueGreenDeploy(
+                        namespace: 'production',
+                        service: 'llm-service',
+                        image: "${DOCKER_REGISTRY}/llm-service:${env.GIT_COMMIT_SHORT}",
+                        healthCheck: '/health',
+                        switchTraffic: true
+                    )
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            // 收集和归档测试报告
+            archiveArtifacts artifacts: '**/test-results*.xml', fingerprint: true
+            archiveArtifacts artifacts: '**/evaluation-reports/*', fingerprint: true
+            
+            // 清理
+            cleanWs()
+        }
+        
+        success {
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'good',
+                message: "✅ Deployment successful: ${env.JOB_NAME} - ${env.BUILD_NUMBER}"
+            )
+        }
+        
+        failure {
+            slackSend(
+                channel: env.SLACK_CHANNEL,
+                color: 'danger',
+                message: "❌ Deployment failed: ${env.JOB_NAME} - ${env.BUILD_NUMBER}"
+            )
+        }
+    }
+}
+```
+
+## 自动化测试脚本
+
+### 评估执行脚本
+
+```python
+# scripts/run_evaluation.py
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Dict, List
+
+import yaml
+from langfuse import Langfuse
+
+class CICDEvaluator:
+    """CI/CD环境评估器"""
+    
+    def __init__(self, config_path: str):
+        self.config = self.load_config(config_path)
+        self.langfuse = Langfuse()
+        self.results = {}
+    
+    def load_config(self, config_path: str) -> Dict:
+        """加载评估配置"""
+        with open(config_path, 'r') as f:
+            return yaml.safe_load(f)
+    
+    def run_evaluation(self) -> Dict:
+        """运行评估"""
+        
+        print("🚀 Starting LLM evaluation...")
+        
+        # 1. 质量评估
+        print("📊 Running quality evaluation...")
+        quality_results = self.evaluate_quality()
+        self.results['quality'] = quality_results
+        
+        # 2. 性能评估
+        print("⚡ Running performance evaluation...")
+        performance_results = self.evaluate_performance()
+        self.results['performance'] = performance_results
+        
+        # 3. 安全评估
+        print("🔒 Running security evaluation...")
+        security_results = self.evaluate_security()
+        self.results['security'] = security_results
+        
+        # 4. 成本评估
+        print("💰 Running cost evaluation...")
+        cost_results = self.evaluate_cost()
+        self.results['cost'] = cost_results
+        
+        # 5. 计算总分
+        overall_score = self.calculate_overall_score()
+        self.results['overall_score'] = overall_score
+        
+        print(f"\n✅ Evaluation complete. Overall score: {overall_score:.2f}")
+        
+        return self.results
+    
+    def evaluate_quality(self) -> Dict:
+        """质量评估"""
+        
+        test_cases = self.load_test_cases('quality')
+        results = []
+        
+        for test_case in test_cases:
+            # 运行测试
+            response = self.run_test_case(test_case)
+            
+            # 评估响应
+            scores = {
+                'accuracy': self.evaluate_accuracy(response, test_case),
+                'relevance': self.evaluate_relevance(response, test_case),
+                'completeness': self.evaluate_completeness(response, test_case),
+                'fluency': self.evaluate_fluency(response)
+            }
+            
+            results.append({
+                'test_id': test_case['id'],
+                'scores': scores,
+                'passed': all(s >= self.config['thresholds'][k] 
+                             for k, s in scores.items())
+            })
+        
+        return {
+            'test_results': results,
+            'pass_rate': sum(1 for r in results if r['passed']) / len(results),
+            'average_scores': self.calculate_average_scores(results)
+        }
+    
+    def check_quality_gates(self) -> bool:
+        """检查质量门槛"""
+        
+        gates_passed = True
+        gate_results = []
+        
+        for gate in self.config['quality_gates']:
+            metric_value = self.get_metric_value(gate['metric'])
+            passed = self.evaluate_gate(metric_value, gate)
+            
+            gate_results.append({
+                'gate': gate['name'],
+                'metric': gate['metric'],
+                'value': metric_value,
+                'threshold': gate['threshold'],
+                'passed': passed
+            })
+            
+            if not passed and gate['blocking']:
+                gates_passed = False
+        
+        return gates_passed, gate_results
+    
+    def generate_report(self, output_path: str):
+        """生成评估报告"""
+        
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'commit': os.environ.get('GIT_COMMIT', 'unknown'),
+            'branch': os.environ.get('GIT_BRANCH', 'unknown'),
+            'results': self.results,
+            'gates': self.check_quality_gates()[1],
+            'recommendation': self.generate_recommendation()
+        }
+        
+        # 保存JSON报告
+        with open(output_path, 'w') as f:
+            json.dump(report, f, indent=2)
+        
+        # 生成Markdown报告
+        self.generate_markdown_report(report, output_path.replace('.json', '.md'))
+        
+        return report
+
+def main():
+    parser = argparse.ArgumentParser(description='Run LLM evaluation for CI/CD')
+    parser.add_argument('--config', required=True, help='Configuration file path')
+    parser.add_argument('--output', required=True, help='Output report path')
+    parser.add_argument('--fail-on-threshold', action='store_true', 
+                       help='Fail if threshold not met')
+    
+    args = parser.parse_args()
+    
+    evaluator = CICDEvaluator(args.config)
+    results = evaluator.run_evaluation()
+    report = evaluator.generate_report(args.output)
+    
+    # 检查是否满足阈值
+    if args.fail_on_threshold:
+        gates_passed, _ = evaluator.check_quality_gates()
+        if not gates_passed:
+            print("❌ Quality gates not passed")
+            sys.exit(1)
+    
+    print("✅ Evaluation completed successfully")
+    sys.exit(0)
+
+if __name__ == '__main__':
+    main()
+```
+
+## 部署策略
+
+### 金丝雀部署
+
+```python
+# scripts/canary_deploy.py
+class CanaryDeployment:
+    """金丝雀部署管理"""
+    
+    def __init__(self, config):
+        self.config = config
+        self.k8s_client = self.init_k8s_client()
+        self.metrics_client = MetricsClient()
+    
+    def deploy_canary(self, new_version: str, traffic_percentage: int = 10):
+        """部署金丝雀版本"""
+        
+        print(f"🐤 Starting canary deployment of {new_version}")
+        
+        # 1. 部署新版本（少量流量）
+        self.deploy_new_version(new_version, traffic_percentage)
+        
+        # 2. 监控指标
+        print("📊 Monitoring canary metrics...")
+        monitoring_duration = self.config['canary']['monitoring_duration']
+        metrics = self.monitor_canary(duration=monitoring_duration)
+        
+        # 3. 分析结果
+        print("🔍 Analyzing canary performance...")
+        analysis = self.analyze_canary_metrics(metrics)
+        
+        # 4. 决策
+        if analysis['recommendation'] == 'promote':
+            print("✅ Canary successful, promoting to full deployment")
+            self.promote_canary(new_version)
+            return {'status': 'promoted', 'analysis': analysis}
+        else:
+            print("❌ Canary failed, rolling back")
+            self.rollback_canary()
+            return {'status': 'rolled_back', 'analysis': analysis}
+    
+    def monitor_canary(self, duration: int) -> Dict:
+        """监控金丝雀指标"""
+        
+        start_time = time.time()
+        metrics = {
+            'error_rates': [],
+            'latencies': [],
+            'quality_scores': [],
+            'user_feedback': []
+        }
+        
+        while time.time() - start_time < duration:
+            # 收集实时指标
+            current_metrics = self.collect_metrics()
+            
+            for key in metrics:
+                metrics[key].append(current_metrics[key])
+            
+            # 检查是否需要紧急回滚
+            if self.should_emergency_rollback(current_metrics):
+                print("🚨 Emergency rollback triggered!")
+                self.rollback_canary()
+                raise Exception("Emergency rollback due to critical metrics")
+            
+            time.sleep(30)  # 每30秒采集一次
+        
+        return metrics
+    
+    def analyze_canary_metrics(self, metrics: Dict) -> Dict:
+        """分析金丝雀指标"""
+        
+        baseline = self.get_baseline_metrics()
+        
+        analysis = {
+            'error_rate_change': self.calculate_change(
+                baseline['error_rate'], 
+                np.mean(metrics['error_rates'])
+            ),
+            'latency_change': self.calculate_change(
+                baseline['latency_p95'], 
+                np.percentile(metrics['latencies'], 95)
+            ),
+            'quality_change': self.calculate_change(
+                baseline['quality_score'], 
+                np.mean(metrics['quality_scores'])
+            )
+        }
+        
+        # 统计检验
+        analysis['statistical_significance'] = self.run_statistical_tests(
+            baseline, metrics
+        )
+        
+        # 生成建议
+        if (analysis['error_rate_change'] < 0.05 and  # 错误率增加<5%
+            analysis['latency_change'] < 0.1 and       # 延迟增加<10%
+            analysis['quality_change'] > -0.05):       # 质量下降<5%
+            analysis['recommendation'] = 'promote'
+        else:
+            analysis['recommendation'] = 'rollback'
+        
+        return analysis
+```
+
+## 监控集成
+
+```python
+# scripts/cicd_monitoring.py
+class CICDMonitoring:
+    """CI/CD监控集成"""
+    
+    def __init__(self):
+        self.prometheus = PrometheusClient()
+        self.grafana = GrafanaClient()
+        self.alertmanager = AlertManagerClient()
+    
+    def setup_deployment_monitoring(self, deployment_id: str):
+        """设置部署监控"""
+        
+        # 创建部署专用仪表板
+        dashboard = self.create_deployment_dashboard(deployment_id)
+        
+        # 设置告警规则
+        alerts = self.setup_deployment_alerts(deployment_id)
+        
+        # 开始收集指标
+        self.start_metrics_collection(deployment_id)
+        
+        return {
+            'dashboard_url': dashboard['url'],
+            'alerts': alerts,
+            'metrics_endpoint': f'/metrics/{deployment_id}'
+        }
+    
+    def create_deployment_dashboard(self, deployment_id: str):
+        """创建部署仪表板"""
+        
+        dashboard_config = {
+            'title': f'Deployment {deployment_id}',
+            'panels': [
+                self.create_panel('Deployment Progress', 'gauge'),
+                self.create_panel('Quality Metrics', 'graph'),
+                self.create_panel('Error Rate', 'graph'),
+                self.create_panel('Latency Distribution', 'heatmap'),
+                self.create_panel('Rollback Status', 'stat')
+            ]
+        }
+        
+        return self.grafana.create_dashboard(dashboard_config)
+```
+
+## 最佳实践
+
+<Cards>
+  <Card title="渐进式部署">
+    使用金丝雀、蓝绿等策略降低部署风险
+  </Card>
+  
+  <Card title="自动化回滚">
+    设置自动回滚机制，快速恢复服务
+  </Card>
+  
+  <Card title="质量门槛">
+    设置严格的质量门槛，防止低质量代码进入生产
+  </Card>
+  
+  <Card title="持续监控">
+    部署后持续监控，及时发现和解决问题
+  </Card>
+</Cards>
+
+## 关键要点
+
+- ✅ 将LLM评估深度集成到CI/CD各个阶段
+- ✅ 设置多层质量门槛，确保代码质量
+- ✅ 实施渐进式部署策略，降低风险
+- ✅ 建立自动化回滚机制，快速恢复
+- ✅ 持续监控部署效果，不断优化流程

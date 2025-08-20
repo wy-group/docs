@@ -1,0 +1,468 @@
+---
+title: 快速开始
+description: 10分钟内完成你的第一个 LLM 评估，快速上手评估系统
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { CodeBlock } from 'fumadocs-ui/components/codeblock';
+
+# 快速开始：10分钟完成第一个评估
+
+本教程将带你在 10 分钟内完成第一个 LLM 评估，让你快速理解评估的基本流程。
+
+<Callout type="info">
+**准备时间**：2 分钟 | **编码时间**：5 分钟 | **运行时间**：3 分钟
+</Callout>
+
+## 环境准备（2分钟）
+
+### 安装必要的包
+
+<Tabs items={['pip', 'conda', 'poetry']}>
+  <Tab value="pip">
+    ```bash
+    # 安装基础依赖
+    pip install openai langfuse pandas numpy
+
+    # 如果使用本地模型
+    pip install transformers torch
+    ```
+  </Tab>
+  
+  <Tab value="conda">
+    ```bash
+    # 创建虚拟环境
+    conda create -n llm-eval python=3.9
+    conda activate llm-eval
+
+    # 安装依赖
+    conda install -c conda-forge openai pandas numpy
+    pip install langfuse
+    ```
+  </Tab>
+  
+  <Tab value="poetry">
+    ```bash
+    # 初始化项目
+    poetry init
+    
+    # 添加依赖
+    poetry add openai langfuse pandas numpy
+    ```
+  </Tab>
+</Tabs>
+
+### 配置环境变量
+
+```bash
+# 创建 .env 文件
+touch .env
+
+# 添加必要的 API 密钥
+echo "OPENAI_API_KEY=your_openai_api_key" >> .env
+echo "LANGFUSE_PUBLIC_KEY=your_public_key" >> .env
+echo "LANGFUSE_SECRET_KEY=your_secret_key" >> .env
+```
+
+## 第一个评估示例（5分钟）
+
+### Step 1: 准备测试数据
+
+创建文件 `first_evaluation.py`：
+
+```python
+# first_evaluation.py
+import os
+from dotenv import load_dotenv
+import openai
+from langfuse import Langfuse
+import json
+from datetime import datetime
+
+# 加载环境变量
+load_dotenv()
+
+# 初始化客户端
+openai.api_key = os.getenv("OPENAI_API_KEY")
+langfuse = Langfuse()
+
+# 准备测试数据集
+test_cases = [
+    {
+        "id": "test_001",
+        "input": "法国的首都是哪里？",
+        "expected": "巴黎",
+        "category": "地理知识"
+    },
+    {
+        "id": "test_002",
+        "input": "解释什么是机器学习",
+        "expected_keywords": ["算法", "数据", "模型", "预测"],
+        "category": "技术概念"
+    },
+    {
+        "id": "test_003",
+        "input": "写一个关于春天的俳句",
+        "evaluation_criteria": "创造性、符合俳句格式",
+        "category": "创意写作"
+    }
+]
+```
+
+### Step 2: 实现评估函数
+
+```python
+def evaluate_response(test_case, model_output):
+    """
+    简单的评估函数，支持多种评估方式
+    """
+    score = 0
+    feedback = []
+    
+    # 精确匹配评估
+    if "expected" in test_case:
+        if test_case["expected"].lower() in model_output.lower():
+            score = 1.0
+            feedback.append("✅ 包含预期答案")
+        else:
+            score = 0.0
+            feedback.append("❌ 未包含预期答案")
+    
+    # 关键词评估
+    elif "expected_keywords" in test_case:
+        keywords = test_case["expected_keywords"]
+        found = sum(1 for kw in keywords if kw in model_output)
+        score = found / len(keywords)
+        feedback.append(f"📝 包含 {found}/{len(keywords)} 个关键词")
+    
+    # LLM-as-Judge 评估
+    elif "evaluation_criteria" in test_case:
+        judge_prompt = f"""
+        请根据以下标准评估输出质量：
+        标准：{test_case['evaluation_criteria']}
+        输出：{model_output}
+        
+        请给出0-1的评分，其中1表示完全满足标准：
+        """
+        
+        judge_response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": judge_prompt}],
+            temperature=0
+        )
+        
+        try:
+            score = float(judge_response.choices[0].message.content.strip())
+            feedback.append(f"🤖 AI评分: {score}")
+        except:
+            score = 0.5
+            feedback.append("⚠️ 评分解析失败，使用默认分数")
+    
+    return {
+        "score": score,
+        "feedback": " | ".join(feedback)
+    }
+```
+
+### Step 3: 运行评估
+
+```python
+def run_evaluation():
+    """
+    执行完整的评估流程
+    """
+    results = []
+    
+    print("🚀 开始评估...\n")
+    
+    for test_case in test_cases:
+        print(f"📋 测试案例 {test_case['id']}: {test_case['input']}")
+        
+        # 生成模型输出
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": test_case["input"]}],
+            temperature=0.7,
+            max_tokens=100
+        )
+        
+        model_output = response.choices[0].message.content
+        print(f"💬 模型输出: {model_output[:100]}...")
+        
+        # 评估输出
+        evaluation = evaluate_response(test_case, model_output)
+        
+        # 记录结果
+        result = {
+            "test_id": test_case["id"],
+            "category": test_case["category"],
+            "input": test_case["input"],
+            "output": model_output,
+            "score": evaluation["score"],
+            "feedback": evaluation["feedback"],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        results.append(result)
+        
+        # 发送到 Langfuse（可选）
+        langfuse.score(
+            trace_id=test_case["id"],
+            name=f"evaluation_{test_case['category']}",
+            value=evaluation["score"],
+            comment=evaluation["feedback"]
+        )
+        
+        print(f"📊 评分: {evaluation['score']:.2f}")
+        print(f"💡 反馈: {evaluation['feedback']}\n")
+    
+    return results
+
+# 执行评估
+if __name__ == "__main__":
+    results = run_evaluation()
+    
+    # 生成评估报告
+    print("\n" + "="*50)
+    print("📈 评估报告")
+    print("="*50)
+    
+    total_score = sum(r["score"] for r in results)
+    avg_score = total_score / len(results)
+    
+    print(f"✅ 总测试案例: {len(results)}")
+    print(f"📊 平均得分: {avg_score:.2%}")
+    
+    # 按类别统计
+    categories = {}
+    for r in results:
+        cat = r["category"]
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append(r["score"])
+    
+    print("\n📂 分类统计:")
+    for cat, scores in categories.items():
+        avg = sum(scores) / len(scores)
+        print(f"  - {cat}: {avg:.2%} ({len(scores)} 个测试)")
+    
+    # 保存结果
+    with open("evaluation_results.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    
+    print("\n💾 结果已保存到 evaluation_results.json")
+```
+
+## 查看评估结果（3分钟）
+
+### 运行评估脚本
+
+```bash
+python first_evaluation.py
+```
+
+### 预期输出
+
+```
+🚀 开始评估...
+
+📋 测试案例 test_001: 法国的首都是哪里？
+💬 模型输出: 法国的首都是巴黎...
+📊 评分: 1.00
+💡 反馈: ✅ 包含预期答案
+
+📋 测试案例 test_002: 解释什么是机器学习
+💬 模型输出: 机器学习是一种人工智能技术，通过算法让计算机从数据中学习...
+📊 评分: 0.75
+💡 反馈: 📝 包含 3/4 个关键词
+
+📋 测试案例 test_003: 写一个关于春天的俳句
+💬 模型输出: 樱花飘落时，微风轻拂过湖面，春意正浓时...
+📊 评分: 0.85
+💡 反馈: 🤖 AI评分: 0.85
+
+==================================================
+📈 评估报告
+==================================================
+✅ 总测试案例: 3
+📊 平均得分: 86.67%
+
+📂 分类统计:
+  - 地理知识: 100.00% (1 个测试)
+  - 技术概念: 75.00% (1 个测试)
+  - 创意写作: 85.00% (1 个测试)
+
+💾 结果已保存到 evaluation_results.json
+```
+
+### 结果分析
+
+查看生成的 `evaluation_results.json`：
+
+```json
+[
+  {
+    "test_id": "test_001",
+    "category": "地理知识",
+    "input": "法国的首都是哪里？",
+    "output": "法国的首都是巴黎。",
+    "score": 1.0,
+    "feedback": "✅ 包含预期答案",
+    "timestamp": "2024-01-20T10:30:45.123456"
+  },
+  // ... 更多结果
+]
+```
+
+## 进阶：可视化结果
+
+### 创建简单的可视化脚本
+
+```python
+# visualize_results.py
+import json
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# 加载结果
+with open("evaluation_results.json", "r", encoding="utf-8") as f:
+    results = json.load(f)
+
+# 转换为 DataFrame
+df = pd.DataFrame(results)
+
+# 创建可视化
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+# 分类得分柱状图
+category_scores = df.groupby('category')['score'].mean()
+axes[0].bar(category_scores.index, category_scores.values)
+axes[0].set_title('各类别平均得分')
+axes[0].set_ylabel('得分')
+axes[0].set_ylim(0, 1)
+
+# 得分分布直方图
+axes[1].hist(df['score'], bins=10, edgecolor='black')
+axes[1].set_title('得分分布')
+axes[1].set_xlabel('得分')
+axes[1].set_ylabel('频次')
+
+plt.tight_layout()
+plt.savefig('evaluation_visualization.png')
+plt.show()
+
+print("📊 可视化已保存到 evaluation_visualization.png")
+```
+
+## 常见问题解决
+
+<Callout type="warning">
+**API 调用失败？**
+- 检查 API 密钥是否正确
+- 确认网络连接正常
+- 查看 API 配额是否充足
+</Callout>
+
+<Tabs items={['错误1: API密钥', '错误2: 依赖包', '错误3: 编码']}>
+  <Tab value="错误1: API密钥">
+    ```python
+    # 问题：openai.error.AuthenticationError
+    # 解决方案：
+    import os
+    
+    # 方法1：直接设置
+    openai.api_key = "sk-your-actual-key"
+    
+    # 方法2：从环境变量读取
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    
+    # 方法3：使用 python-dotenv
+    from dotenv import load_dotenv
+    load_dotenv()
+    ```
+  </Tab>
+  
+  <Tab value="错误2: 依赖包">
+    ```bash
+    # 问题：ModuleNotFoundError
+    # 解决方案：
+    
+    # 检查已安装的包
+    pip list
+    
+    # 重新安装所有依赖
+    pip install -r requirements.txt
+    
+    # 或者单独安装缺失的包
+    pip install openai langfuse
+    ```
+  </Tab>
+  
+  <Tab value="错误3: 编码">
+    ```python
+    # 问题：UnicodeDecodeError
+    # 解决方案：
+    
+    # 读取文件时指定编码
+    with open("file.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    # 写入文件时确保正确编码
+    with open("output.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    ```
+  </Tab>
+</Tabs>
+
+## 下一步建议
+
+恭喜你完成了第一个 LLM 评估！🎉 现在你可以：
+
+<Cards>
+  <Card title="扩展测试集" description="添加更多测试案例，覆盖更多场景">
+    ```python
+    # 添加更多测试类型
+    test_cases.extend([
+        {"id": "test_004", "input": "...", ...},
+        {"id": "test_005", "input": "...", ...}
+    ])
+    ```
+  </Card>
+  
+  <Card title="优化评估函数" description="实现更复杂的评估逻辑">
+    ```python
+    # 添加语义相似度评估
+    from sentence_transformers import SentenceTransformer
+    
+    def semantic_similarity(text1, text2):
+        # 实现语义相似度计算
+        pass
+    ```
+  </Card>
+  
+  <Card title="集成到 CI/CD" description="自动化评估流程">
+    ```yaml
+    # .github/workflows/evaluate.yml
+    on: [push]
+    jobs:
+      evaluate:
+        runs-on: ubuntu-latest
+        steps:
+          - run: python first_evaluation.py
+    ```
+  </Card>
+</Cards>
+
+## 核心要点回顾
+
+- ✅ 评估可以很简单，从小规模开始
+- ✅ 选择合适的评估方法（精确匹配、关键词、LLM-as-Judge）
+- ✅ 记录和分析结果，持续改进
+- ✅ 可视化帮助更好地理解结果
+
+## 继续学习
+
+<Card title="核心概念 →" href="/docs/getting-started/concepts" description="深入理解评估的核心概念和术语" />

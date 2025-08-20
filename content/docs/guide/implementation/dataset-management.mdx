@@ -1,0 +1,1244 @@
+---
+title: 数据集管理
+description: 构建和管理高质量的 LLM 评估数据集体系
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 数据集管理
+
+高质量的评估数据集是 LLM 系统评估的基础。本章介绍如何构建、管理和维护评估数据集。
+
+## 数据集架构设计
+
+### 数据集层次结构
+
+<Mermaid
+  chart="
+graph TD
+    A[数据集体系] --> B[黄金数据集]
+    A --> C[测试数据集]
+    A --> D[基准数据集]
+    A --> E[生产数据集]
+    
+    B --> B1[人工标注]
+    B --> B2[专家验证]
+    B --> B3[版本控制]
+    
+    C --> C1[单元测试]
+    C --> C2[集成测试]
+    C --> C3[回归测试]
+    
+    D --> D1[行业基准]
+    D --> D2[学术基准]
+    D --> D3[内部基准]
+    
+    E --> E1[实时采样]
+    E --> E2[用户反馈]
+    E --> E3[边缘案例]
+"
+/>
+
+## 数据集构建
+
+### 1. 数据收集策略
+
+```python
+class DatasetBuilder:
+    """数据集构建器"""
+    
+    def __init__(self, config):
+        self.config = config
+        self.data_sources = self.init_data_sources()
+        self.quality_checker = DataQualityChecker()
+        self.storage = DatasetStorage()
+    
+    def collect_data(self, source_type: str, **kwargs):
+        """收集数据"""
+        
+        collectors = {
+            'production': self.collect_from_production,
+            'synthetic': self.generate_synthetic_data,
+            'crowdsourcing': self.collect_from_crowdsourcing,
+            'expert': self.collect_from_experts,
+            'public': self.collect_from_public_datasets
+        }
+        
+        if source_type not in collectors:
+            raise ValueError(f"Unknown source type: {source_type}")
+        
+        return collectors[source_type](**kwargs)
+    
+    def collect_from_production(self, 
+                               start_date: datetime,
+                               end_date: datetime,
+                               sampling_rate: float = 0.01):
+        """从生产环境收集数据"""
+        
+        print(f"📊 Collecting production data from {start_date} to {end_date}")
+        
+        # 连接生产数据源
+        prod_client = self.data_sources['production']
+        
+        # 查询数据
+        raw_data = prod_client.query(
+            """
+            SELECT 
+                request_id,
+                timestamp,
+                user_id,
+                input_text,
+                output_text,
+                model_version,
+                parameters,
+                metrics,
+                user_feedback
+            FROM llm_requests
+            WHERE timestamp BETWEEN %s AND %s
+            AND random() < %s
+            """,
+            (start_date, end_date, sampling_rate)
+        )
+        
+        # 数据清洗
+        cleaned_data = []
+        for record in raw_data:
+            # 移除PII
+            record = self.remove_pii(record)
+            
+            # 质量检查
+            if self.quality_checker.check(record):
+                cleaned_data.append(record)
+        
+        print(f"✅ Collected {len(cleaned_data)} samples from production")
+        
+        return cleaned_data
+    
+    def generate_synthetic_data(self, 
+                               template_file: str,
+                               num_samples: int,
+                               diversity_level: float = 0.7):
+        """生成合成数据"""
+        
+        print(f"🤖 Generating {num_samples} synthetic samples")
+        
+        # 加载模板
+        templates = self.load_templates(template_file)
+        
+        synthetic_data = []
+        
+        for i in range(num_samples):
+            # 选择模板
+            template = self.select_template(templates, diversity_level)
+            
+            # 生成变体
+            sample = self.generate_variation(template)
+            
+            # 自动标注
+            sample['expected_output'] = self.auto_label(sample['input'])
+            
+            # 添加元数据
+            sample['metadata'] = {
+                'source': 'synthetic',
+                'template_id': template['id'],
+                'generation_date': datetime.now(),
+                'diversity_score': self.calculate_diversity(sample, synthetic_data)
+            }
+            
+            synthetic_data.append(sample)
+        
+        return synthetic_data
+    
+    def augment_dataset(self, base_dataset: List[Dict]) -> List[Dict]:
+        """数据增强"""
+        
+        augmented = []
+        
+        augmentation_strategies = [
+            self.paraphrase_augmentation,
+            self.back_translation_augmentation,
+            self.noise_injection_augmentation,
+            self.context_modification_augmentation
+        ]
+        
+        for sample in base_dataset:
+            # 原始样本
+            augmented.append(sample)
+            
+            # 应用增强策略
+            for strategy in augmentation_strategies:
+                if random.random() < self.config['augmentation_probability']:
+                    augmented_sample = strategy(sample)
+                    augmented_sample['metadata']['augmentation'] = strategy.__name__
+                    augmented.append(augmented_sample)
+        
+        return augmented
+    
+    def balance_dataset(self, dataset: List[Dict]) -> List[Dict]:
+        """平衡数据集"""
+        
+        # 分析类别分布
+        category_distribution = self.analyze_distribution(dataset)
+        
+        # 确定目标分布
+        target_distribution = self.config.get('target_distribution', 'uniform')
+        
+        if target_distribution == 'uniform':
+            # 均匀分布
+            min_count = min(category_distribution.values())
+            balanced = []
+            
+            for category, samples in self.group_by_category(dataset).items():
+                balanced.extend(random.sample(samples, min_count))
+        
+        elif target_distribution == 'stratified':
+            # 分层采样
+            balanced = self.stratified_sampling(dataset, category_distribution)
+        
+        else:
+            # 自定义分布
+            balanced = self.custom_distribution_sampling(
+                dataset, 
+                target_distribution
+            )
+        
+        return balanced
+```
+
+### 2. 数据标注管理
+
+<Tabs items={['标注流程', '质量控制', '标注工具', '成本优化']}>
+  <Tab value="标注流程">
+    ```python
+    class AnnotationManager:
+        """标注管理器"""
+        
+        def __init__(self):
+            self.annotators = []
+            self.annotation_queue = Queue()
+            self.quality_controller = AnnotationQualityController()
+        
+        def create_annotation_task(self, dataset: List[Dict], 
+                                  task_config: Dict) -> str:
+            """创建标注任务"""
+            
+            task = {
+                'id': str(uuid.uuid4()),
+                'created_at': datetime.now(),
+                'dataset': dataset,
+                'config': task_config,
+                'status': 'pending',
+                'annotations': {},
+                'quality_metrics': {}
+            }
+            
+            # 分配标注者
+            assignments = self.assign_annotators(task)
+            
+            # 创建标注界面
+            interface_url = self.create_annotation_interface(task)
+            
+            # 发送任务
+            for annotator_id, samples in assignments.items():
+                self.send_task_to_annotator(
+                    annotator_id,
+                    task['id'],
+                    samples,
+                    interface_url
+                )
+            
+            return task['id']
+        
+        def assign_annotators(self, task: Dict) -> Dict:
+            """分配标注者"""
+            
+            assignments = {}
+            samples = task['dataset']
+            
+            # 根据标注者专长分配
+            for sample in samples:
+                best_annotator = self.find_best_annotator(
+                    sample,
+                    task['config']['required_expertise']
+                )
+                
+                if best_annotator not in assignments:
+                    assignments[best_annotator] = []
+                
+                assignments[best_annotator].append(sample)
+            
+            # 添加冗余标注（用于一致性检查）
+            if task['config'].get('redundancy', 0) > 1:
+                assignments = self.add_redundant_annotations(
+                    assignments,
+                    task['config']['redundancy']
+                )
+            
+            return assignments
+        
+        def process_annotation(self, annotation: Dict):
+            """处理标注结果"""
+            
+            # 验证标注
+            validation_result = self.validate_annotation(annotation)
+            
+            if not validation_result['valid']:
+                return self.request_reannotation(
+                    annotation,
+                    validation_result['reasons']
+                )
+            
+            # 质量评分
+            quality_score = self.quality_controller.score(annotation)
+            
+            # 存储标注
+            self.store_annotation(annotation, quality_score)
+            
+            # 更新标注者统计
+            self.update_annotator_stats(
+                annotation['annotator_id'],
+                quality_score
+            )
+            
+            # 检查任务完成度
+            if self.is_task_complete(annotation['task_id']):
+                self.finalize_task(annotation['task_id'])
+    ```
+  </Tab>
+  
+  <Tab value="质量控制">
+    ```python
+    class AnnotationQualityController:
+        """标注质量控制"""
+        
+        def __init__(self):
+            self.gold_standards = self.load_gold_standards()
+            self.agreement_calculator = InterRaterAgreement()
+        
+        def implement_quality_measures(self, task_id: str):
+            """实施质量措施"""
+            
+            measures = {
+                'gold_standard_check': self.insert_gold_standards(task_id),
+                'duplicate_check': self.insert_duplicates(task_id),
+                'consistency_check': self.check_consistency(task_id),
+                'expert_review': self.schedule_expert_review(task_id)
+            }
+            
+            return measures
+        
+        def insert_gold_standards(self, task_id: str, percentage: float = 0.1):
+            """插入黄金标准样本"""
+            
+            task = self.get_task(task_id)
+            dataset = task['dataset']
+            
+            # 计算需要插入的数量
+            num_gold = int(len(dataset) * percentage)
+            
+            # 随机选择黄金标准
+            gold_samples = random.sample(self.gold_standards, num_gold)
+            
+            # 随机插入到数据集中
+            for gold in gold_samples:
+                insert_position = random.randint(0, len(dataset))
+                gold['is_gold_standard'] = True
+                gold['expected_annotation'] = gold['annotation']
+                dataset.insert(insert_position, gold)
+            
+            return num_gold
+        
+        def calculate_inter_annotator_agreement(self, annotations: List[Dict]):
+            """计算标注者间一致性"""
+            
+            # 分组相同样本的不同标注
+            grouped = defaultdict(list)
+            for ann in annotations:
+                grouped[ann['sample_id']].append(ann)
+            
+            # 计算各种一致性指标
+            metrics = {
+                'cohen_kappa': [],
+                'fleiss_kappa': [],
+                'krippendorff_alpha': [],
+                'percentage_agreement': []
+            }
+            
+            for sample_id, sample_annotations in grouped.items():
+                if len(sample_annotations) >= 2:
+                    # Cohen's Kappa (两个标注者)
+                    if len(sample_annotations) == 2:
+                        kappa = self.agreement_calculator.cohen_kappa(
+                            sample_annotations[0]['labels'],
+                            sample_annotations[1]['labels']
+                        )
+                        metrics['cohen_kappa'].append(kappa)
+                    
+                    # Fleiss' Kappa (多个标注者)
+                    if len(sample_annotations) > 2:
+                        kappa = self.agreement_calculator.fleiss_kappa(
+                            [ann['labels'] for ann in sample_annotations]
+                        )
+                        metrics['fleiss_kappa'].append(kappa)
+                    
+                    # Krippendorff's Alpha
+                    alpha = self.agreement_calculator.krippendorff_alpha(
+                        [ann['labels'] for ann in sample_annotations]
+                    )
+                    metrics['krippendorff_alpha'].append(alpha)
+                    
+                    # 简单一致性百分比
+                    agreement = self.calculate_simple_agreement(sample_annotations)
+                    metrics['percentage_agreement'].append(agreement)
+            
+            # 计算平均值
+            summary = {}
+            for metric, values in metrics.items():
+                if values:
+                    summary[metric] = {
+                        'mean': np.mean(values),
+                        'std': np.std(values),
+                        'min': np.min(values),
+                        'max': np.max(values)
+                    }
+            
+            return summary
+        
+        def identify_difficult_samples(self, annotations: List[Dict]):
+            """识别困难样本"""
+            
+            difficulty_scores = {}
+            
+            # 按样本分组
+            grouped = defaultdict(list)
+            for ann in annotations:
+                grouped[ann['sample_id']].append(ann)
+            
+            for sample_id, sample_annotations in grouped.items():
+                # 计算分歧度
+                if len(sample_annotations) > 1:
+                    disagreement = 1 - self.calculate_simple_agreement(sample_annotations)
+                    
+                    # 计算标注时间
+                    avg_time = np.mean([
+                        ann['time_spent'] 
+                        for ann in sample_annotations
+                    ])
+                    
+                    # 综合难度分数
+                    difficulty_scores[sample_id] = {
+                        'disagreement': disagreement,
+                        'avg_time': avg_time,
+                        'num_revisions': sum(ann.get('revisions', 0) 
+                                           for ann in sample_annotations),
+                        'difficulty_score': disagreement * 0.5 + 
+                                          min(avg_time / 60, 1) * 0.3 + 
+                                          min(sum(ann.get('revisions', 0) 
+                                              for ann in sample_annotations) / 10, 1) * 0.2
+                    }
+            
+            # 返回最困难的样本
+            return sorted(
+                difficulty_scores.items(),
+                key=lambda x: x[1]['difficulty_score'],
+                reverse=True
+            )
+    ```
+  </Tab>
+  
+  <Tab value="标注工具">
+    ```python
+    class AnnotationInterface:
+        """标注界面"""
+        
+        def create_web_interface(self, task_config: Dict):
+            """创建Web标注界面"""
+            
+            from flask import Flask, render_template, request, jsonify
+            
+            app = Flask(__name__)
+            
+            @app.route('/')
+            def index():
+                return render_template('annotation.html', config=task_config)
+            
+            @app.route('/api/next_sample')
+            def next_sample():
+                sample = self.get_next_sample(request.args.get('annotator_id'))
+                return jsonify(sample)
+            
+            @app.route('/api/submit_annotation', methods=['POST'])
+            def submit_annotation():
+                annotation = request.json
+                
+                # 验证标注
+                if not self.validate_annotation_format(annotation):
+                    return jsonify({'error': 'Invalid format'}), 400
+                
+                # 保存标注
+                self.save_annotation(annotation)
+                
+                # 获取下一个样本
+                next_sample = self.get_next_sample(annotation['annotator_id'])
+                
+                return jsonify({
+                    'status': 'success',
+                    'next_sample': next_sample
+                })
+            
+            @app.route('/api/skip_sample', methods=['POST'])
+            def skip_sample():
+                reason = request.json.get('reason')
+                sample_id = request.json.get('sample_id')
+                
+                self.mark_as_skipped(sample_id, reason)
+                
+                next_sample = self.get_next_sample(request.json['annotator_id'])
+                return jsonify({'next_sample': next_sample})
+            
+            @app.route('/api/progress')
+            def get_progress():
+                annotator_id = request.args.get('annotator_id')
+                progress = self.calculate_progress(annotator_id)
+                return jsonify(progress)
+            
+            return app
+        
+        def create_annotation_template(self, task_type: str):
+            """创建标注模板"""
+            
+            templates = {
+                'classification': '''
+                <div class="annotation-container">
+                    <div class="sample-display">
+                        <h3>输入</h3>
+                        <div id="input-text">{{ sample.input }}</div>
+                        
+                        <h3>输出</h3>
+                        <div id="output-text">{{ sample.output }}</div>
+                    </div>
+                    
+                    <div class="annotation-form">
+                        <h3>质量评分</h3>
+                        <div class="rating-group">
+                            <label>准确性:</label>
+                            <input type="range" name="accuracy" min="0" max="5" step="0.5">
+                            <span class="rating-value">2.5</span>
+                        </div>
+                        
+                        <div class="rating-group">
+                            <label>相关性:</label>
+                            <input type="range" name="relevance" min="0" max="5" step="0.5">
+                            <span class="rating-value">2.5</span>
+                        </div>
+                        
+                        <div class="rating-group">
+                            <label>完整性:</label>
+                            <input type="range" name="completeness" min="0" max="5" step="0.5">
+                            <span class="rating-value">2.5</span>
+                        </div>
+                        
+                        <h3>分类标签</h3>
+                        <div class="checkbox-group">
+                            {% for label in labels %}
+                            <label>
+                                <input type="checkbox" name="labels" value="{{ label }}">
+                                {{ label }}
+                            </label>
+                            {% endfor %}
+                        </div>
+                        
+                        <h3>备注</h3>
+                        <textarea name="notes" rows="3"></textarea>
+                        
+                        <div class="button-group">
+                            <button onclick="submitAnnotation()">提交</button>
+                            <button onclick="skipSample()">跳过</button>
+                        </div>
+                    </div>
+                </div>
+                ''',
+                
+                'comparison': '''
+                <div class="comparison-container">
+                    <h3>选择更好的响应</h3>
+                    
+                    <div class="input-section">
+                        <h4>输入</h4>
+                        <div>{{ sample.input }}</div>
+                    </div>
+                    
+                    <div class="responses-section">
+                        <div class="response-a">
+                            <h4>响应 A</h4>
+                            <div>{{ sample.response_a }}</div>
+                            <button onclick="selectResponse('A')">选择 A</button>
+                        </div>
+                        
+                        <div class="response-b">
+                            <h4>响应 B</h4>
+                            <div>{{ sample.response_b }}</div>
+                            <button onclick="selectResponse('B')">选择 B</button>
+                        </div>
+                    </div>
+                    
+                    <div class="tie-option">
+                        <button onclick="selectResponse('tie')">同样好</button>
+                    </div>
+                    
+                    <div class="explanation">
+                        <h4>请解释你的选择</h4>
+                        <textarea name="explanation" rows="3"></textarea>
+                    </div>
+                </div>
+                '''
+            }
+            
+            return templates.get(task_type, templates['classification'])
+    ```
+  </Tab>
+  
+  <Tab value="成本优化">
+    ```python
+    class AnnotationCostOptimizer:
+        """标注成本优化"""
+        
+        def optimize_annotation_strategy(self, 
+                                        budget: float,
+                                        dataset_size: int,
+                                        quality_requirement: float):
+            """优化标注策略"""
+            
+            strategies = []
+            
+            # 策略1：主动学习
+            active_learning = self.calculate_active_learning_strategy(
+                budget, dataset_size, quality_requirement
+            )
+            strategies.append(active_learning)
+            
+            # 策略2：混合标注（人工+自动）
+            hybrid = self.calculate_hybrid_strategy(
+                budget, dataset_size, quality_requirement
+            )
+            strategies.append(hybrid)
+            
+            # 策略3：渐进式标注
+            progressive = self.calculate_progressive_strategy(
+                budget, dataset_size, quality_requirement
+            )
+            strategies.append(progressive)
+            
+            # 选择最优策略
+            best_strategy = max(strategies, key=lambda s: s['expected_quality'] / s['cost'])
+            
+            return best_strategy
+        
+        def calculate_active_learning_strategy(self, budget, dataset_size, quality_req):
+            """主动学习策略"""
+            
+            # 初始标注批次
+            initial_batch_size = int(dataset_size * 0.1)
+            initial_cost = initial_batch_size * self.config['cost_per_annotation']
+            
+            remaining_budget = budget - initial_cost
+            remaining_samples = dataset_size - initial_batch_size
+            
+            # 迭代选择最有价值的样本
+            selected_samples = []
+            current_model_quality = 0.5  # 初始质量
+            
+            while remaining_budget > 0 and remaining_samples > 0:
+                # 选择不确定性最高的样本
+                batch_size = min(
+                    int(remaining_budget / self.config['cost_per_annotation']),
+                    int(remaining_samples * 0.1)
+                )
+                
+                if batch_size == 0:
+                    break
+                
+                # 更新成本和质量
+                batch_cost = batch_size * self.config['cost_per_annotation']
+                remaining_budget -= batch_cost
+                remaining_samples -= batch_size
+                
+                # 估计质量提升
+                quality_improvement = self.estimate_quality_improvement(
+                    batch_size, 
+                    current_model_quality
+                )
+                current_model_quality += quality_improvement
+                
+                selected_samples.append({
+                    'size': batch_size,
+                    'cost': batch_cost,
+                    'expected_quality': current_model_quality
+                })
+                
+                # 检查是否达到质量要求
+                if current_model_quality >= quality_req:
+                    break
+            
+            return {
+                'strategy': 'active_learning',
+                'total_samples': initial_batch_size + sum(b['size'] for b in selected_samples),
+                'cost': initial_cost + sum(b['cost'] for b in selected_samples),
+                'expected_quality': current_model_quality,
+                'iterations': len(selected_samples) + 1
+            }
+    ```
+  </Tab>
+</Tabs>
+
+### 3. 版本控制
+
+```python
+class DatasetVersionControl:
+    """数据集版本控制"""
+    
+    def __init__(self, storage_backend='git-lfs'):
+        self.storage = self.init_storage(storage_backend)
+        self.metadata_db = MetadataDatabase()
+    
+    def create_version(self, dataset: Dataset, message: str) -> str:
+        """创建新版本"""
+        
+        # 生成版本号
+        version = self.generate_version_number()
+        
+        # 计算数据集哈希
+        dataset_hash = self.calculate_dataset_hash(dataset)
+        
+        # 保存数据集
+        storage_path = self.storage.save(
+            dataset.to_parquet(),
+            f"datasets/{dataset.name}/v{version}"
+        )
+        
+        # 保存元数据
+        metadata = {
+            'version': version,
+            'created_at': datetime.now(),
+            'created_by': self.get_current_user(),
+            'message': message,
+            'dataset_hash': dataset_hash,
+            'storage_path': storage_path,
+            'statistics': self.calculate_statistics(dataset),
+            'parent_version': dataset.parent_version,
+            'changes': self.calculate_changes(dataset)
+        }
+        
+        self.metadata_db.save_version(metadata)
+        
+        # 创建Git标签
+        if self.storage.type == 'git-lfs':
+            self.create_git_tag(version, message)
+        
+        return version
+    
+    def compare_versions(self, version1: str, version2: str) -> Dict:
+        """比较两个版本"""
+        
+        # 加载数据集
+        dataset1 = self.load_version(version1)
+        dataset2 = self.load_version(version2)
+        
+        comparison = {
+            'size_change': len(dataset2) - len(dataset1),
+            'added_samples': [],
+            'removed_samples': [],
+            'modified_samples': [],
+            'statistics_change': {}
+        }
+        
+        # 找出差异
+        ids1 = set(dataset1['id'])
+        ids2 = set(dataset2['id'])
+        
+        # 新增的样本
+        added_ids = ids2 - ids1
+        comparison['added_samples'] = dataset2[dataset2['id'].isin(added_ids)]
+        
+        # 删除的样本
+        removed_ids = ids1 - ids2
+        comparison['removed_samples'] = dataset1[dataset1['id'].isin(removed_ids)]
+        
+        # 修改的样本
+        common_ids = ids1 & ids2
+        for sample_id in common_ids:
+            sample1 = dataset1[dataset1['id'] == sample_id].iloc[0]
+            sample2 = dataset2[dataset2['id'] == sample_id].iloc[0]
+            
+            if not sample1.equals(sample2):
+                comparison['modified_samples'].append({
+                    'id': sample_id,
+                    'changes': self.diff_samples(sample1, sample2)
+                })
+        
+        # 统计变化
+        stats1 = self.calculate_statistics(dataset1)
+        stats2 = self.calculate_statistics(dataset2)
+        
+        for key in stats1:
+            if key in stats2:
+                comparison['statistics_change'][key] = {
+                    'before': stats1[key],
+                    'after': stats2[key],
+                    'change': stats2[key] - stats1[key]
+                }
+        
+        return comparison
+    
+    def merge_datasets(self, dataset1: Dataset, dataset2: Dataset, 
+                      strategy: str = 'union') -> Dataset:
+        """合并数据集"""
+        
+        if strategy == 'union':
+            # 并集
+            merged = pd.concat([dataset1, dataset2]).drop_duplicates('id')
+        
+        elif strategy == 'intersection':
+            # 交集
+            common_ids = set(dataset1['id']) & set(dataset2['id'])
+            merged = dataset1[dataset1['id'].isin(common_ids)]
+        
+        elif strategy == 'difference':
+            # 差集
+            unique_ids = set(dataset1['id']) - set(dataset2['id'])
+            merged = dataset1[dataset1['id'].isin(unique_ids)]
+        
+        elif strategy == 'smart':
+            # 智能合并（解决冲突）
+            merged = self.smart_merge(dataset1, dataset2)
+        
+        else:
+            raise ValueError(f"Unknown merge strategy: {strategy}")
+        
+        # 更新元数据
+        merged.metadata = {
+            'merge_info': {
+                'dataset1': dataset1.metadata,
+                'dataset2': dataset2.metadata,
+                'strategy': strategy,
+                'merge_date': datetime.now()
+            }
+        }
+        
+        return merged
+```
+
+## 数据质量管理
+
+### 质量检查体系
+
+```python
+class DataQualityManager:
+    """数据质量管理"""
+    
+    def __init__(self):
+        self.quality_checks = self.init_quality_checks()
+        self.quality_metrics = {}
+    
+    def comprehensive_quality_check(self, dataset: Dataset) -> Dict:
+        """全面质量检查"""
+        
+        print("🔍 Running comprehensive quality check...")
+        
+        results = {
+            'overall_score': 0,
+            'checks': {},
+            'issues': [],
+            'recommendations': []
+        }
+        
+        # 运行所有检查
+        for check_name, check_func in self.quality_checks.items():
+            check_result = check_func(dataset)
+            results['checks'][check_name] = check_result
+            
+            # 记录问题
+            if check_result['issues']:
+                results['issues'].extend(check_result['issues'])
+        
+        # 计算总体质量分数
+        results['overall_score'] = self.calculate_quality_score(results['checks'])
+        
+        # 生成改进建议
+        results['recommendations'] = self.generate_recommendations(results)
+        
+        # 生成质量报告
+        self.generate_quality_report(results)
+        
+        return results
+    
+    def check_data_completeness(self, dataset: Dataset) -> Dict:
+        """检查数据完整性"""
+        
+        completeness_issues = []
+        
+        # 检查必填字段
+        required_fields = ['id', 'input', 'output', 'timestamp']
+        for field in required_fields:
+            if field not in dataset.columns:
+                completeness_issues.append(f"Missing required field: {field}")
+            else:
+                # 检查空值
+                null_count = dataset[field].isnull().sum()
+                if null_count > 0:
+                    completeness_issues.append(
+                        f"Field '{field}' has {null_count} null values"
+                    )
+        
+        # 检查数据类型
+        expected_types = {
+            'id': 'string',
+            'input': 'string',
+            'output': 'string',
+            'timestamp': 'datetime'
+        }
+        
+        for field, expected_type in expected_types.items():
+            if field in dataset.columns:
+                actual_type = str(dataset[field].dtype)
+                if not self.check_type_compatibility(actual_type, expected_type):
+                    completeness_issues.append(
+                        f"Field '{field}' has wrong type: {actual_type} (expected {expected_type})"
+                    )
+        
+        return {
+            'score': 1.0 - len(completeness_issues) / 10,  # 假设10个问题为最差
+            'issues': completeness_issues
+        }
+    
+    def check_data_consistency(self, dataset: Dataset) -> Dict:
+        """检查数据一致性"""
+        
+        consistency_issues = []
+        
+        # 检查ID唯一性
+        duplicate_ids = dataset[dataset.duplicated('id')]['id'].tolist()
+        if duplicate_ids:
+            consistency_issues.append(f"Duplicate IDs found: {duplicate_ids[:5]}...")
+        
+        # 检查时间戳顺序
+        if 'timestamp' in dataset.columns:
+            unsorted_count = (dataset['timestamp'].diff() < 0).sum()
+            if unsorted_count > 0:
+                consistency_issues.append(
+                    f"{unsorted_count} samples have incorrect timestamp order"
+                )
+        
+        # 检查文本长度异常
+        if 'input' in dataset.columns:
+            input_lengths = dataset['input'].str.len()
+            outliers = self.detect_outliers(input_lengths)
+            if len(outliers) > 0:
+                consistency_issues.append(
+                    f"{len(outliers)} samples have abnormal input length"
+                )
+        
+        return {
+            'score': 1.0 - len(consistency_issues) / 5,
+            'issues': consistency_issues
+        }
+    
+    def check_label_quality(self, dataset: Dataset) -> Dict:
+        """检查标签质量"""
+        
+        if 'labels' not in dataset.columns:
+            return {'score': 0, 'issues': ['No labels found']}
+        
+        label_issues = []
+        
+        # 检查标签分布
+        label_distribution = dataset['labels'].value_counts()
+        
+        # 检查类别不平衡
+        imbalance_ratio = label_distribution.max() / label_distribution.min()
+        if imbalance_ratio > 10:
+            label_issues.append(
+                f"Severe class imbalance detected (ratio: {imbalance_ratio:.1f})"
+            )
+        
+        # 检查罕见标签
+        rare_labels = label_distribution[label_distribution < 5].index.tolist()
+        if rare_labels:
+            label_issues.append(
+                f"Rare labels found: {rare_labels}"
+            )
+        
+        # 检查标签一致性（如果有多个标注者）
+        if 'annotator_id' in dataset.columns:
+            agreement = self.calculate_label_agreement(dataset)
+            if agreement < 0.7:
+                label_issues.append(
+                    f"Low inter-annotator agreement: {agreement:.2f}"
+                )
+        
+        return {
+            'score': 1.0 - len(label_issues) / 3,
+            'issues': label_issues,
+            'distribution': label_distribution.to_dict()
+        }
+```
+
+### 数据清洗流水线
+
+```python
+class DataCleaningPipeline:
+    """数据清洗流水线"""
+    
+    def __init__(self):
+        self.cleaners = []
+        self.setup_pipeline()
+    
+    def setup_pipeline(self):
+        """设置清洗流水线"""
+        
+        self.add_cleaner(RemoveDuplicatesCleaner())
+        self.add_cleaner(RemovePIICleaner())
+        self.add_cleaner(NormalizeTextCleaner())
+        self.add_cleaner(FilterQualityCleaner())
+        self.add_cleaner(BalanceDatasetCleaner())
+    
+    def clean(self, dataset: Dataset) -> Dataset:
+        """执行清洗"""
+        
+        cleaned = dataset.copy()
+        cleaning_log = []
+        
+        for cleaner in self.cleaners:
+            print(f"Running {cleaner.__class__.__name__}...")
+            
+            before_size = len(cleaned)
+            cleaned = cleaner.clean(cleaned)
+            after_size = len(cleaned)
+            
+            cleaning_log.append({
+                'cleaner': cleaner.__class__.__name__,
+                'removed': before_size - after_size,
+                'remaining': after_size
+            })
+        
+        # 添加清洗元数据
+        cleaned.metadata['cleaning_log'] = cleaning_log
+        cleaned.metadata['cleaned_at'] = datetime.now()
+        
+        return cleaned
+
+class RemovePIICleaner:
+    """PII清洗器"""
+    
+    def __init__(self):
+        self.pii_patterns = self.load_pii_patterns()
+    
+    def clean(self, dataset: Dataset) -> Dataset:
+        """移除PII信息"""
+        
+        cleaned = dataset.copy()
+        
+        for column in ['input', 'output']:
+            if column in cleaned.columns:
+                cleaned[column] = cleaned[column].apply(self.remove_pii)
+        
+        return cleaned
+    
+    def remove_pii(self, text: str) -> str:
+        """从文本中移除PII"""
+        
+        # 电子邮件
+        text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', 
+                     '[EMAIL]', text)
+        
+        # 电话号码
+        text = re.sub(r'(\+?\d{1,3}[-.\s]?)?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}',
+                     '[PHONE]', text)
+        
+        # 身份证号
+        text = re.sub(r'\b\d{3}-\d{2}-\d{4}\b', '[SSN]', text)
+        
+        # 信用卡
+        text = re.sub(r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b', '[CREDIT_CARD]', text)
+        
+        # IP地址
+        text = re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '[IP_ADDRESS]', text)
+        
+        # 人名（使用NER模型）
+        # text = self.remove_names(text)
+        
+        return text
+```
+
+## 数据集分析与洞察
+
+```python
+class DatasetAnalyzer:
+    """数据集分析器"""
+    
+    def analyze_dataset(self, dataset: Dataset) -> Dict:
+        """分析数据集"""
+        
+        analysis = {
+            'basic_stats': self.calculate_basic_stats(dataset),
+            'distribution': self.analyze_distribution(dataset),
+            'diversity': self.analyze_diversity(dataset),
+            'coverage': self.analyze_coverage(dataset),
+            'quality_metrics': self.analyze_quality(dataset),
+            'insights': self.generate_insights(dataset)
+        }
+        
+        return analysis
+    
+    def analyze_diversity(self, dataset: Dataset) -> Dict:
+        """分析多样性"""
+        
+        diversity_metrics = {}
+        
+        # 词汇多样性
+        all_text = ' '.join(dataset['input'].tolist() + dataset['output'].tolist())
+        tokens = all_text.split()
+        
+        diversity_metrics['vocabulary_size'] = len(set(tokens))
+        diversity_metrics['type_token_ratio'] = len(set(tokens)) / len(tokens)
+        
+        # 语义多样性
+        embeddings = self.compute_embeddings(dataset['input'].tolist())
+        diversity_metrics['semantic_diversity'] = self.calculate_semantic_diversity(embeddings)
+        
+        # 长度多样性
+        lengths = dataset['input'].str.len()
+        diversity_metrics['length_diversity'] = {
+            'mean': lengths.mean(),
+            'std': lengths.std(),
+            'min': lengths.min(),
+            'max': lengths.max(),
+            'cv': lengths.std() / lengths.mean()  # 变异系数
+        }
+        
+        # 主题多样性
+        topics = self.extract_topics(dataset)
+        diversity_metrics['topic_diversity'] = {
+            'num_topics': len(topics),
+            'topic_distribution': topics
+        }
+        
+        return diversity_metrics
+    
+    def analyze_coverage(self, dataset: Dataset) -> Dict:
+        """分析覆盖度"""
+        
+        coverage = {}
+        
+        # 任务类型覆盖
+        if 'task_type' in dataset.columns:
+            coverage['task_types'] = dataset['task_type'].value_counts().to_dict()
+        
+        # 难度级别覆盖
+        if 'difficulty' in dataset.columns:
+            coverage['difficulty_levels'] = dataset['difficulty'].value_counts().to_dict()
+        
+        # 领域覆盖
+        if 'domain' in dataset.columns:
+            coverage['domains'] = dataset['domain'].value_counts().to_dict()
+        
+        # 边缘案例覆盖
+        coverage['edge_cases'] = self.identify_edge_cases(dataset)
+        
+        # 计算覆盖分数
+        coverage['coverage_score'] = self.calculate_coverage_score(coverage)
+        
+        return coverage
+    
+    def generate_insights(self, dataset: Dataset) -> List[str]:
+        """生成洞察"""
+        
+        insights = []
+        
+        # 数据规模洞察
+        if len(dataset) < 100:
+            insights.append("⚠️ 数据集规模较小，可能影响评估的统计显著性")
+        elif len(dataset) > 10000:
+            insights.append("✅ 数据集规模充足，适合进行全面评估")
+        
+        # 质量洞察
+        quality_score = self.analyze_quality(dataset)['overall_score']
+        if quality_score < 0.7:
+            insights.append("⚠️ 数据质量需要改进，建议进行数据清洗")
+        
+        # 多样性洞察
+        diversity = self.analyze_diversity(dataset)
+        if diversity['type_token_ratio'] < 0.1:
+            insights.append("⚠️ 词汇多样性较低，可能存在重复或模板化内容")
+        
+        # 平衡性洞察
+        if 'labels' in dataset.columns:
+            imbalance = self.check_class_imbalance(dataset)
+            if imbalance > 5:
+                insights.append(f"⚠️ 类别严重不平衡（比例 {imbalance:.1f}:1），建议重新采样")
+        
+        return insights
+```
+
+## 数据集可视化
+
+```python
+class DatasetVisualizer:
+    """数据集可视化"""
+    
+    def create_dashboard(self, dataset: Dataset):
+        """创建数据集仪表板"""
+        
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        # 创建子图
+        fig = make_subplots(
+            rows=3, cols=3,
+            subplot_titles=(
+                '样本数量趋势', '长度分布', '标签分布',
+                '质量分数分布', '多样性指标', '覆盖度热图',
+                '时间分布', '难度分布', '相似度矩阵'
+            ),
+            specs=[
+                [{'type': 'scatter'}, {'type': 'histogram'}, {'type': 'bar'}],
+                [{'type': 'histogram'}, {'type': 'scatter'}, {'type': 'heatmap'}],
+                [{'type': 'scatter'}, {'type': 'pie'}, {'type': 'heatmap'}]
+            ]
+        )
+        
+        # 添加各种图表...
+        
+        return fig
+```
+
+## 最佳实践
+
+<Cards>
+  <Card title="持续更新">
+    定期更新数据集，保持与实际使用场景同步
+  </Card>
+  
+  <Card title="版本管理">
+    严格的版本控制，确保可追溯和可重现
+  </Card>
+  
+  <Card title="质量第一">
+    质量优于数量，确保数据集的高质量
+  </Card>
+  
+  <Card title="多样性保证">
+    确保数据集覆盖各种场景和边缘案例
+  </Card>
+</Cards>
+
+## 关键要点
+
+- ✅ 建立完整的数据集生命周期管理流程
+- ✅ 实施严格的质量控制和标注规范
+- ✅ 使用版本控制确保可追溯性
+- ✅ 定期分析和优化数据集
+- ✅ 平衡成本和质量，优化标注策略

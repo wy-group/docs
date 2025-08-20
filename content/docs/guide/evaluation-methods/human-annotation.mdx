@@ -1,0 +1,1003 @@
+---
+title: 人工标注
+description: 构建高质量的人工标注体系，确保评估的准确性和可靠性
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+
+# 人工标注系统
+
+人工标注是建立评估基准的黄金标准。虽然成本较高，但对于关键场景和建立ground truth至关重要。
+
+## 为什么需要人工标注
+
+### 人工标注的独特价值
+
+<Mermaid
+  chart="
+graph TD
+    A[人工标注优势] --> B[捕捉细微差别]
+    A --> C[处理主观判断]
+    A --> D[发现新问题]
+    A --> E[建立基准]
+    
+    B --> B1[语言的微妙性]
+    B --> B2[文化背景理解]
+    
+    C --> C1[创意评估]
+    C --> C2[情感分析]
+    
+    D --> D1[边缘案例]
+    D --> D2[未预期行为]
+    
+    E --> E1[训练数据]
+    E --> E2[验证集]"
+/>
+
+<Callout type="info">
+**关键洞察**：人工标注不是为了替代自动评估，而是为了校准和验证自动评估系统。
+</Callout>
+
+## 标注团队组建
+
+### 团队角色设置
+
+| 角色 | 职责 | 技能要求 | 人数建议 |
+|------|------|----------|----------|
+| **标注经理** | 整体协调、质量把控 | 项目管理、数据分析 | 1人 |
+| **领域专家** | 制定标准、解决争议 | 深厚的领域知识 | 2-3人 |
+| **高级标注员** | 复杂案例标注、培训新人 | 经验丰富、理解力强 | 3-5人 |
+| **标注员** | 日常标注工作 | 细心、一致性好 | 10-20人 |
+| **质检员** | 抽检、一致性检查 | 严谨、注重细节 | 2-3人 |
+
+### 标注员选择标准
+
+```python
+class AnnotatorProfile:
+    """标注员画像"""
+    
+    # 基础要求
+    basic_requirements = {
+        "education": "本科及以上",
+        "language": "母语水平",
+        "availability": "每周至少20小时",
+        "training_completion": True
+    }
+    
+    # 技能评估
+    skill_assessment = {
+        "language_proficiency": {
+            "grammar": 0.9,      # 语法准确性
+            "comprehension": 0.9, # 理解能力
+            "expression": 0.85    # 表达能力
+        },
+        "domain_knowledge": {
+            "general": 0.8,       # 通识知识
+            "specific": 0.7       # 特定领域知识
+        },
+        "work_quality": {
+            "accuracy": 0.9,      # 准确率
+            "consistency": 0.85,  # 一致性
+            "speed": 0.8         # 效率
+        }
+    }
+    
+    # 性格特质
+    personality_traits = [
+        "细心认真",
+        "逻辑清晰",
+        "耐心",
+        "团队合作",
+        "持续学习"
+    ]
+```
+
+## 标注流程设计
+
+### 完整的标注流程
+
+<Steps>
+  <Step>
+    ### 准备阶段
+    - 定义标注任务
+    - 制定标注指南
+    - 准备标注数据
+    - 设置标注平台
+  </Step>
+  
+  <Step>
+    ### 培训阶段
+    - 标注指南讲解
+    - 示例演练
+    - 试标注
+    - 反馈与答疑
+  </Step>
+  
+  <Step>
+    ### 执行阶段
+    - 分配任务
+    - 独立标注
+    - 定期同步
+    - 问题上报
+  </Step>
+  
+  <Step>
+    ### 质控阶段
+    - 交叉验证
+    - 一致性检查
+    - 争议解决
+    - 质量报告
+  </Step>
+  
+  <Step>
+    ### 优化阶段
+    - 数据分析
+    - 流程改进
+    - 指南更新
+    - 团队培训
+  </Step>
+</Steps>
+
+### 标注指南模板
+
+```markdown
+# LLM输出质量标注指南 v1.0
+
+## 1. 标注目标
+评估LLM生成内容的质量，为模型改进提供高质量的训练数据。
+
+## 2. 评估维度
+
+### 2.1 准确性 (Accuracy)
+**定义**：信息是否正确、无误
+**评分标准**：
+- 5分：完全准确，所有信息都正确
+- 4分：基本准确，有极少量小错误
+- 3分：部分准确，有一些错误但不影响主要观点
+- 2分：错误较多，影响理解
+- 1分：完全错误或误导性信息
+
+**示例**：
+✅ 好例子："巴黎是法国的首都" → 5分
+❌ 坏例子："巴黎是德国的首都" → 1分
+
+### 2.2 相关性 (Relevance)
+**定义**：回答是否切题、满足用户需求
+**评分标准**：
+- 5分：完全相关，直接回答问题
+- 4分：高度相关，略有偏离
+- 3分：基本相关，部分偏题
+- 2分：关联性弱
+- 1分：完全不相关
+
+### 2.3 完整性 (Completeness)
+[继续详细定义...]
+
+## 3. 特殊情况处理
+
+### 3.1 有害内容
+如果输出包含以下内容，直接标记为"有害"：
+- 暴力、仇恨言论
+- 虚假信息
+- 个人隐私信息
+- 非法活动指导
+
+### 3.2 无法判断
+如果因为专业知识限制无法判断，标记为"需要专家审核"
+
+## 4. 标注示例
+[提供10-20个详细的标注示例]
+
+## 5. 常见问题Q&A
+[列出标注过程中的常见问题和解答]
+```
+
+## 标注平台实现
+
+### 标注界面设计
+
+```typescript
+interface AnnotationInterface {
+  // 任务信息
+  task: {
+    id: string;
+    type: 'single_label' | 'multi_label' | 'ranking' | 'scoring';
+    instruction: string;
+    deadline: Date;
+  };
+  
+  // 待标注数据
+  data: {
+    input: string;
+    output: string;
+    context?: string;
+    metadata?: Record<string, any>;
+  };
+  
+  // 标注选项
+  annotation: {
+    // 评分型
+    scores?: {
+      accuracy: number;     // 1-5
+      relevance: number;    // 1-5
+      completeness: number; // 1-5
+      fluency: number;      // 1-5
+    };
+    
+    // 分类型
+    categories?: string[];
+    
+    // 排序型
+    ranking?: number;
+    
+    // 文本反馈
+    comments?: string;
+    
+    // 标记
+    flags?: {
+      harmful: boolean;
+      unclear: boolean;
+      needs_expert: boolean;
+    };
+  };
+  
+  // 标注元数据
+  metadata: {
+    annotator_id: string;
+    start_time: Date;
+    end_time: Date;
+    confidence: number;  // 0-1
+    difficulty: 'easy' | 'medium' | 'hard';
+  };
+}
+```
+
+### Web标注平台实现
+
+```python
+from flask import Flask, render_template, request, jsonify
+from datetime import datetime
+import uuid
+
+app = Flask(__name__)
+
+class AnnotationPlatform:
+    """标注平台后端"""
+    
+    def __init__(self):
+        self.tasks = {}
+        self.annotations = {}
+        self.annotators = {}
+    
+    def create_task_batch(self, data_batch, task_config):
+        """创建标注任务批次"""
+        batch_id = str(uuid.uuid4())
+        
+        for item in data_batch:
+            task = {
+                "id": str(uuid.uuid4()),
+                "batch_id": batch_id,
+                "data": item,
+                "config": task_config,
+                "status": "pending",
+                "created_at": datetime.now(),
+                "assignments": []
+            }
+            self.tasks[task["id"]] = task
+        
+        return batch_id
+    
+    def assign_task(self, annotator_id):
+        """智能分配任务"""
+        # 获取标注员历史
+        annotator = self.annotators.get(annotator_id, {})
+        
+        # 选择合适的任务
+        for task_id, task in self.tasks.items():
+            if task["status"] == "pending":
+                # 检查是否已经标注过
+                if annotator_id not in [a["annotator_id"] for a in task["assignments"]]:
+                    # 分配任务
+                    task["assignments"].append({
+                        "annotator_id": annotator_id,
+                        "assigned_at": datetime.now(),
+                        "status": "assigned"
+                    })
+                    return task
+        
+        return None
+    
+    def submit_annotation(self, task_id, annotator_id, annotation_data):
+        """提交标注结果"""
+        annotation = {
+            "id": str(uuid.uuid4()),
+            "task_id": task_id,
+            "annotator_id": annotator_id,
+            "data": annotation_data,
+            "submitted_at": datetime.now()
+        }
+        
+        # 保存标注
+        if task_id not in self.annotations:
+            self.annotations[task_id] = []
+        self.annotations[task_id].append(annotation)
+        
+        # 更新任务状态
+        task = self.tasks[task_id]
+        required_annotations = task["config"].get("annotations_per_task", 3)
+        
+        if len(self.annotations[task_id]) >= required_annotations:
+            task["status"] = "completed"
+        
+        return annotation["id"]
+    
+    def calculate_agreement(self, task_id):
+        """计算标注一致性"""
+        annotations = self.annotations.get(task_id, [])
+        
+        if len(annotations) < 2:
+            return None
+        
+        # 提取评分
+        scores = []
+        for ann in annotations:
+            if "scores" in ann["data"]:
+                scores.append(ann["data"]["scores"])
+        
+        # 计算Krippendorff's Alpha
+        alpha = self._krippendorff_alpha(scores)
+        
+        return {
+            "task_id": task_id,
+            "num_annotations": len(annotations),
+            "alpha": alpha,
+            "interpretation": self._interpret_alpha(alpha)
+        }
+    
+    def _krippendorff_alpha(self, scores):
+        """计算Krippendorff's Alpha系数"""
+        # 简化实现，实际应使用专业库
+        import numpy as np
+        
+        if not scores or len(scores) < 2:
+            return 0
+        
+        # 将评分转换为矩阵
+        score_matrix = np.array([
+            [s.get(dim, 0) for dim in ["accuracy", "relevance", "completeness"]]
+            for s in scores
+        ])
+        
+        # 计算平均一致性
+        mean_score = np.mean(score_matrix, axis=0)
+        variance = np.var(score_matrix, axis=0)
+        
+        # 简化的alpha计算
+        if np.mean(variance) == 0:
+            return 1.0
+        
+        alpha = 1 - (np.mean(variance) / np.var(mean_score))
+        return max(0, min(1, alpha))
+    
+    def _interpret_alpha(self, alpha):
+        """解释一致性系数"""
+        if alpha < 0.2:
+            return "极低一致性"
+        elif alpha < 0.4:
+            return "低一致性"
+        elif alpha < 0.6:
+            return "中等一致性"
+        elif alpha < 0.8:
+            return "高一致性"
+        else:
+            return "极高一致性"
+
+# API路由
+@app.route('/api/get_task/<annotator_id>')
+def get_task(annotator_id):
+    """获取标注任务"""
+    task = platform.assign_task(annotator_id)
+    if task:
+        return jsonify(task)
+    return jsonify({"message": "No tasks available"}), 404
+
+@app.route('/api/submit_annotation', methods=['POST'])
+def submit_annotation():
+    """提交标注结果"""
+    data = request.json
+    annotation_id = platform.submit_annotation(
+        data['task_id'],
+        data['annotator_id'],
+        data['annotation']
+    )
+    return jsonify({"annotation_id": annotation_id})
+
+# 前端界面
+@app.route('/')
+def index():
+    return render_template('annotation.html')
+
+platform = AnnotationPlatform()
+```
+
+### 前端标注界面
+
+```html
+<!-- annotation.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LLM输出标注平台</title>
+    <style>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .task-panel {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .annotation-form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+        }
+        
+        .score-slider {
+            width: 100%;
+            margin: 10px 0;
+        }
+        
+        .score-value {
+            display: inline-block;
+            width: 30px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .submit-btn {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .submit-btn:hover {
+            background: #45a049;
+        }
+        
+        .timer {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LLM 输出质量标注</h1>
+        
+        <div class="task-panel">
+            <h2>任务内容</h2>
+            <div class="input-section">
+                <h3>用户输入：</h3>
+                <p id="user-input"></p>
+            </div>
+            <div class="output-section">
+                <h3>模型输出：</h3>
+                <p id="model-output"></p>
+            </div>
+        </div>
+        
+        <div class="annotation-form">
+            <h2>评估维度</h2>
+            
+            <div class="dimension">
+                <label>准确性 (1-5)：</label>
+                <input type="range" class="score-slider" id="accuracy" 
+                       min="1" max="5" value="3">
+                <span class="score-value" id="accuracy-value">3</span>
+            </div>
+            
+            <div class="dimension">
+                <label>相关性 (1-5)：</label>
+                <input type="range" class="score-slider" id="relevance" 
+                       min="1" max="5" value="3">
+                <span class="score-value" id="relevance-value">3</span>
+            </div>
+            
+            <div class="dimension">
+                <label>完整性 (1-5)：</label>
+                <input type="range" class="score-slider" id="completeness" 
+                       min="1" max="5" value="3">
+                <span class="score-value" id="completeness-value">3</span>
+            </div>
+            
+            <div class="dimension">
+                <label>流畅性 (1-5)：</label>
+                <input type="range" class="score-slider" id="fluency" 
+                       min="1" max="5" value="3">
+                <span class="score-value" id="fluency-value">3</span>
+            </div>
+            
+            <div class="flags">
+                <h3>标记</h3>
+                <label>
+                    <input type="checkbox" id="harmful"> 包含有害内容
+                </label>
+                <label>
+                    <input type="checkbox" id="unclear"> 表述不清
+                </label>
+                <label>
+                    <input type="checkbox" id="needs-expert"> 需要专家审核
+                </label>
+            </div>
+            
+            <div class="comments">
+                <h3>备注（可选）</h3>
+                <textarea id="comments" rows="4" style="width: 100%;"></textarea>
+            </div>
+            
+            <div class="confidence">
+                <label>标注信心度：</label>
+                <select id="confidence">
+                    <option value="high">高</option>
+                    <option value="medium">中</option>
+                    <option value="low">低</option>
+                </select>
+            </div>
+            
+            <button class="submit-btn" onclick="submitAnnotation()">提交标注</button>
+        </div>
+        
+        <div class="timer">
+            <span>用时：</span><span id="timer">00:00</span>
+        </div>
+    </div>
+    
+    <script>
+        let startTime = Date.now();
+        let currentTask = null;
+        
+        // 更新滑块值显示
+        document.querySelectorAll('.score-slider').forEach(slider => {
+            slider.addEventListener('input', (e) => {
+                document.getElementById(e.target.id + '-value').textContent = e.target.value;
+            });
+        });
+        
+        // 计时器
+        setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            document.getElementById('timer').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }, 1000);
+        
+        // 获取任务
+        async function getTask() {
+            const response = await fetch('/api/get_task/annotator_001');
+            const task = await response.json();
+            currentTask = task;
+            
+            document.getElementById('user-input').textContent = task.data.input;
+            document.getElementById('model-output').textContent = task.data.output;
+        }
+        
+        // 提交标注
+        async function submitAnnotation() {
+            const annotation = {
+                scores: {
+                    accuracy: parseInt(document.getElementById('accuracy').value),
+                    relevance: parseInt(document.getElementById('relevance').value),
+                    completeness: parseInt(document.getElementById('completeness').value),
+                    fluency: parseInt(document.getElementById('fluency').value)
+                },
+                flags: {
+                    harmful: document.getElementById('harmful').checked,
+                    unclear: document.getElementById('unclear').checked,
+                    needs_expert: document.getElementById('needs-expert').checked
+                },
+                comments: document.getElementById('comments').value,
+                confidence: document.getElementById('confidence').value,
+                time_spent: Math.floor((Date.now() - startTime) / 1000)
+            };
+            
+            await fetch('/api/submit_annotation', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    task_id: currentTask.id,
+                    annotator_id: 'annotator_001',
+                    annotation: annotation
+                })
+            });
+            
+            // 重置并获取下一个任务
+            resetForm();
+            getTask();
+        }
+        
+        function resetForm() {
+            document.querySelectorAll('.score-slider').forEach(slider => {
+                slider.value = 3;
+                document.getElementById(slider.id + '-value').textContent = '3';
+            });
+            document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
+            document.getElementById('comments').value = '';
+            document.getElementById('confidence').value = 'high';
+            startTime = Date.now();
+        }
+        
+        // 初始加载
+        getTask();
+    </script>
+</body>
+</html>
+```
+
+## 质量控制机制
+
+### 多层质量保证体系
+
+```python
+class QualityControlSystem:
+    """标注质量控制系统"""
+    
+    def __init__(self):
+        self.gold_standard = {}  # 黄金标准答案
+        self.annotator_metrics = {}  # 标注员指标
+    
+    def multi_annotation_strategy(self, task, min_annotations=3):
+        """多人标注策略"""
+        annotations = []
+        annotators = self.select_annotators(task, n=min_annotations)
+        
+        for annotator in annotators:
+            annotation = annotator.annotate(task)
+            annotations.append(annotation)
+        
+        # 计算一致性
+        agreement = self.calculate_agreement(annotations)
+        
+        if agreement < 0.6:  # 一致性太低
+            # 增加标注人数
+            extra_annotators = self.select_annotators(task, n=2, exclude=annotators)
+            for annotator in extra_annotators:
+                annotations.append(annotator.annotate(task))
+        
+        # 聚合结果
+        final_annotation = self.aggregate_annotations(annotations)
+        
+        return final_annotation
+    
+    def calculate_agreement(self, annotations):
+        """计算标注者间一致性"""
+        from sklearn.metrics import cohen_kappa_score
+        import itertools
+        
+        if len(annotations) < 2:
+            return 1.0
+        
+        # 计算所有标注对的Kappa系数
+        kappas = []
+        for ann1, ann2 in itertools.combinations(annotations, 2):
+            kappa = cohen_kappa_score(
+                self._annotation_to_labels(ann1),
+                self._annotation_to_labels(ann2)
+            )
+            kappas.append(kappa)
+        
+        return np.mean(kappas)
+    
+    def aggregate_annotations(self, annotations):
+        """聚合多个标注结果"""
+        # 数值型：取中位数
+        scores = {}
+        for dimension in ['accuracy', 'relevance', 'completeness', 'fluency']:
+            values = [ann['scores'][dimension] for ann in annotations]
+            scores[dimension] = np.median(values)
+        
+        # 布尔型：投票
+        flags = {}
+        for flag in ['harmful', 'unclear', 'needs_expert']:
+            votes = [ann['flags'][flag] for ann in annotations]
+            flags[flag] = sum(votes) > len(votes) / 2
+        
+        # 文本型：收集所有
+        comments = [ann.get('comments', '') for ann in annotations if ann.get('comments')]
+        
+        return {
+            'scores': scores,
+            'flags': flags,
+            'comments': comments,
+            'confidence': self._calculate_confidence(annotations)
+        }
+    
+    def quality_check_pipeline(self, annotation, annotator_id):
+        """质量检查流水线"""
+        checks = []
+        
+        # 1. 完整性检查
+        completeness = self.check_completeness(annotation)
+        checks.append(('completeness', completeness))
+        
+        # 2. 一致性检查
+        consistency = self.check_consistency(annotation, annotator_id)
+        checks.append(('consistency', consistency))
+        
+        # 3. 黄金标准检查
+        if annotation['task_id'] in self.gold_standard:
+            accuracy = self.check_against_gold(annotation)
+            checks.append(('accuracy', accuracy))
+        
+        # 4. 异常检测
+        anomalies = self.detect_anomalies(annotation)
+        checks.append(('anomalies', len(anomalies) == 0))
+        
+        # 综合评分
+        passed = all(check[1] for check in checks)
+        
+        return {
+            'passed': passed,
+            'checks': dict(checks),
+            'feedback': self.generate_feedback(checks)
+        }
+    
+    def detect_anomalies(self, annotation):
+        """检测异常标注"""
+        anomalies = []
+        
+        # 时间异常：太快或太慢
+        time_spent = annotation.get('time_spent', 0)
+        if time_spent < 10:  # 少于10秒
+            anomalies.append('too_fast')
+        elif time_spent > 600:  # 超过10分钟
+            anomalies.append('too_slow')
+        
+        # 评分异常：全部相同分数
+        scores = annotation['scores'].values()
+        if len(set(scores)) == 1:
+            anomalies.append('uniform_scores')
+        
+        # 模式异常：总是给极端分数
+        if all(s in [1, 5] for s in scores):
+            anomalies.append('extreme_scores')
+        
+        return anomalies
+```
+
+### 标注员表现追踪
+
+```python
+class AnnotatorPerformanceTracker:
+    """标注员表现追踪系统"""
+    
+    def __init__(self):
+        self.performance_history = {}
+    
+    def update_metrics(self, annotator_id, task_result):
+        """更新标注员指标"""
+        if annotator_id not in self.performance_history:
+            self.performance_history[annotator_id] = {
+                'total_tasks': 0,
+                'accuracy_scores': [],
+                'consistency_scores': [],
+                'speed_scores': [],
+                'quality_scores': []
+            }
+        
+        metrics = self.performance_history[annotator_id]
+        metrics['total_tasks'] += 1
+        
+        # 更新各项指标
+        if 'accuracy' in task_result:
+            metrics['accuracy_scores'].append(task_result['accuracy'])
+        if 'consistency' in task_result:
+            metrics['consistency_scores'].append(task_result['consistency'])
+        if 'speed' in task_result:
+            metrics['speed_scores'].append(task_result['speed'])
+        
+        # 计算综合质量分
+        quality_score = self.calculate_quality_score(task_result)
+        metrics['quality_scores'].append(quality_score)
+    
+    def get_annotator_report(self, annotator_id):
+        """生成标注员报告"""
+        if annotator_id not in self.performance_history:
+            return None
+        
+        metrics = self.performance_history[annotator_id]
+        
+        report = {
+            'annotator_id': annotator_id,
+            'total_tasks': metrics['total_tasks'],
+            'average_accuracy': np.mean(metrics['accuracy_scores']) if metrics['accuracy_scores'] else 0,
+            'average_consistency': np.mean(metrics['consistency_scores']) if metrics['consistency_scores'] else 0,
+            'average_speed': np.mean(metrics['speed_scores']) if metrics['speed_scores'] else 0,
+            'overall_quality': np.mean(metrics['quality_scores']) if metrics['quality_scores'] else 0,
+            'trend': self.calculate_trend(metrics['quality_scores']),
+            'ranking': self.get_ranking(annotator_id),
+            'recommendations': self.generate_recommendations(metrics)
+        }
+        
+        return report
+    
+    def calculate_trend(self, scores, window=10):
+        """计算表现趋势"""
+        if len(scores) < window:
+            return 'insufficient_data'
+        
+        recent = np.mean(scores[-window:])
+        previous = np.mean(scores[-2*window:-window])
+        
+        if recent > previous * 1.1:
+            return 'improving'
+        elif recent < previous * 0.9:
+            return 'declining'
+        else:
+            return 'stable'
+```
+
+## 成本优化策略
+
+### 智能任务分配
+
+```python
+class SmartTaskAllocator:
+    """智能任务分配器"""
+    
+    def __init__(self):
+        self.task_difficulty_model = self.load_difficulty_model()
+        self.annotator_expertise = {}
+    
+    def allocate_tasks(self, tasks, annotators):
+        """优化任务分配"""
+        allocation = {}
+        
+        # 1. 评估任务难度
+        task_difficulties = {}
+        for task in tasks:
+            difficulty = self.estimate_difficulty(task)
+            task_difficulties[task['id']] = difficulty
+        
+        # 2. 匹配标注员能力
+        for task in sorted(tasks, key=lambda t: task_difficulties[t['id']], reverse=True):
+            # 困难任务分配给专家
+            if task_difficulties[task['id']] > 0.7:
+                suitable_annotators = self.get_expert_annotators(annotators)
+            else:
+                suitable_annotators = annotators
+            
+            # 考虑负载均衡
+            selected = self.select_with_load_balancing(
+                suitable_annotators, 
+                allocation
+            )
+            
+            if task['id'] not in allocation:
+                allocation[task['id']] = []
+            allocation[task['id']].append(selected)
+        
+        return allocation
+    
+    def estimate_difficulty(self, task):
+        """估计任务难度"""
+        features = self.extract_features(task)
+        difficulty = self.task_difficulty_model.predict([features])[0]
+        return difficulty
+    
+    def extract_features(self, task):
+        """提取任务特征"""
+        return {
+            'text_length': len(task['data']['output']),
+            'complexity': self.calculate_complexity(task['data']['output']),
+            'domain_specific': self.is_domain_specific(task['data']['output']),
+            'ambiguity': self.calculate_ambiguity(task['data'])
+        }
+```
+
+### 主动学习策略
+
+```python
+class ActiveLearningSelector:
+    """主动学习样本选择器"""
+    
+    def select_samples_for_annotation(self, unlabeled_pool, budget):
+        """选择最有价值的样本进行标注"""
+        
+        strategies = {
+            'uncertainty': self.uncertainty_sampling,
+            'diversity': self.diversity_sampling,
+            'expected_model_change': self.expected_model_change_sampling
+        }
+        
+        # 混合策略
+        selected_samples = []
+        samples_per_strategy = budget // len(strategies)
+        
+        for strategy_name, strategy_func in strategies.items():
+            samples = strategy_func(unlabeled_pool, samples_per_strategy)
+            selected_samples.extend(samples)
+        
+        return selected_samples[:budget]
+    
+    def uncertainty_sampling(self, pool, n):
+        """不确定性采样"""
+        uncertainties = []
+        
+        for sample in pool:
+            # 使用当前模型预测
+            predictions = self.model.predict_proba([sample])
+            
+            # 计算熵
+            entropy = -np.sum(predictions * np.log(predictions + 1e-10))
+            uncertainties.append((sample, entropy))
+        
+        # 选择熵最大的样本
+        uncertainties.sort(key=lambda x: x[1], reverse=True)
+        return [s[0] for s in uncertainties[:n]]
+```
+
+## 最佳实践总结
+
+<Cards>
+  <Card title="建立清晰的标注指南">
+    详细的指南是高质量标注的基础，包含定义、示例和边界情况
+  </Card>
+  
+  <Card title="实施多人标注">
+    关键数据至少3人标注，通过投票或聚合提高准确性
+  </Card>
+  
+  <Card title="持续培训和反馈">
+    定期培训标注员，及时反馈问题，保持标注质量
+  </Card>
+  
+  <Card title="自动化质量检查">
+    使用自动化工具检测异常，减少人工审核负担
+  </Card>
+</Cards>
+
+## 工具推荐
+
+### 开源标注工具
+
+| 工具 | 特点 | 适用场景 |
+|------|------|----------|
+| **Label Studio** | 功能全面、界面友好 | 通用标注任务 |
+| **Prodigy** | 主动学习、高效 | NLP专项任务 |
+| **Doccano** | 轻量级、易部署 | 文本标注 |
+| **CVAT** | 专业、功能强大 | 计算机视觉 |
+| **Labelbox** | 企业级、协作功能强 | 大规模项目 |
+
+## 关键要点
+
+- ✅ 人工标注是建立ground truth的必要手段
+- ✅ 质量控制比数量更重要
+- ✅ 合理的流程设计可以大幅提升效率
+- ✅ 标注员管理和培训至关重要
+- ✅ 技术手段可以辅助但不能完全替代人工
+
+## 下一步
+
+<Card title="用户反馈系统 →" href="/docs/evaluation-methods/user-feedback" description="了解如何收集和利用真实用户反馈" />

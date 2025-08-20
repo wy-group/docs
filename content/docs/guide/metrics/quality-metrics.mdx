@@ -1,0 +1,761 @@
+---
+title: 质量指标
+description: 全面了解 LLM 输出质量评估的核心指标和计算方法
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 质量指标
+
+质量指标是评估 LLM 输出核心价值的关键度量。本章详细介绍各种质量指标的定义、计算方法和应用场景。
+
+## 质量指标体系
+
+### 指标分类框架
+
+<Mermaid
+  chart="
+graph TD
+    A[质量指标] --> B[语言质量]
+    A --> C[内容质量]
+    A --> D[任务质量]
+    A --> E[安全质量]
+    
+    B --> B1[流畅性]
+    B --> B2[语法正确性]
+    B --> B3[可读性]
+    
+    C --> C1[准确性]
+    C --> C2[相关性]
+    C --> C3[完整性]
+    
+    D --> D1[任务完成度]
+    D --> D2[指令遵循]
+    D --> D3[格式规范]
+    
+    E --> E1[无害性]
+    E --> E2[真实性]
+    E --> E3[公平性]
+"
+/>
+
+## 核心质量指标
+
+### 1. 准确性 (Accuracy)
+
+<Tabs items={['定义与计算', '实现代码', '评估示例', '优化策略']}>
+  <Tab value="定义与计算">
+    **定义**：输出信息的正确性和精确度
+    
+    **计算方法**：
+    - 事实准确性：事实正确的陈述数 / 总陈述数
+    - 数值准确性：|预测值 - 真实值| / 真实值
+    - 语义准确性：语义相似度得分
+    
+    **评分标准**：
+    ```python
+    accuracy_rubric = {
+        '优秀 (0.9-1.0)': '所有关键信息完全准确',
+        '良好 (0.7-0.89)': '大部分信息准确，有少量小错误',
+        '及格 (0.5-0.69)': '基本准确，但有明显错误',
+        '不及格 (<0.5)': '错误较多，影响理解'
+    }
+    ```
+  </Tab>
+  
+  <Tab value="实现代码">
+    ```python
+    class AccuracyMetric:
+        """准确性指标计算"""
+        
+        def __init__(self):
+            self.fact_checker = FactChecker()
+            self.semantic_analyzer = SemanticAnalyzer()
+        
+        def calculate_accuracy(self, output, reference=None):
+            """计算综合准确性"""
+            
+            scores = {}
+            
+            # 1. 事实准确性
+            if reference:
+                scores['factual'] = self.calculate_factual_accuracy(
+                    output, reference
+                )
+            
+            # 2. 语义准确性
+            if reference:
+                scores['semantic'] = self.calculate_semantic_accuracy(
+                    output, reference
+                )
+            
+            # 3. 逻辑准确性
+            scores['logical'] = self.check_logical_consistency(output)
+            
+            # 4. 数值准确性（如果包含数字）
+            if self.contains_numbers(output):
+                scores['numerical'] = self.check_numerical_accuracy(
+                    output, reference
+                )
+            
+            # 加权平均
+            weights = {
+                'factual': 0.4,
+                'semantic': 0.3,
+                'logical': 0.2,
+                'numerical': 0.1
+            }
+            
+            total_score = sum(
+                scores.get(k, 0) * weights[k] 
+                for k in weights if k in scores
+            )
+            
+            return {
+                'overall': total_score,
+                'breakdown': scores,
+                'confidence': self.calculate_confidence(scores)
+            }
+        
+        def calculate_factual_accuracy(self, output, reference):
+            """计算事实准确性"""
+            
+            # 提取声明
+            output_claims = self.fact_checker.extract_claims(output)
+            reference_facts = self.fact_checker.extract_facts(reference)
+            
+            correct = 0
+            for claim in output_claims:
+                if self.fact_checker.verify_claim(claim, reference_facts):
+                    correct += 1
+            
+            return correct / len(output_claims) if output_claims else 0
+        
+        def calculate_semantic_accuracy(self, output, reference):
+            """计算语义准确性"""
+            
+            # 使用句子嵌入计算相似度
+            from sentence_transformers import SentenceTransformer
+            
+            model = SentenceTransformer('all-MiniLM-L6-v2')
+            
+            output_embedding = model.encode(output)
+            reference_embedding = model.encode(reference)
+            
+            # 余弦相似度
+            similarity = np.dot(output_embedding, reference_embedding) / (
+                np.linalg.norm(output_embedding) * np.linalg.norm(reference_embedding)
+            )
+            
+            return similarity
+    ```
+  </Tab>
+  
+  <Tab value="评估示例">
+    ```python
+    # 示例1：事实性问答
+    question = "法国的首都是哪里？"
+    output = "法国的首都是巴黎，它位于法国北部。"
+    reference = "巴黎是法国的首都和最大城市，位于法国北部。"
+    
+    accuracy = AccuracyMetric()
+    result = accuracy.calculate_accuracy(output, reference)
+    
+    print(f"准确性得分：{result['overall']:.2f}")
+    # 输出：准确性得分：0.95
+    
+    # 示例2：包含错误的输出
+    output_with_error = "法国的首都是里昂，它是法国最大的城市。"
+    result = accuracy.calculate_accuracy(output_with_error, reference)
+    
+    print(f"准确性得分：{result['overall']:.2f}")
+    # 输出：准确性得分：0.20
+    ```
+  </Tab>
+  
+  <Tab value="优化策略">
+    ```python
+    class AccuracyOptimizer:
+        """准确性优化策略"""
+        
+        def improve_accuracy(self, model_output, feedback):
+            """基于反馈提升准确性"""
+            
+            strategies = []
+            
+            # 分析错误类型
+            error_analysis = self.analyze_errors(model_output, feedback)
+            
+            if error_analysis['factual_errors'] > 0.3:
+                strategies.append({
+                    'type': 'knowledge_update',
+                    'action': 'Update knowledge base with correct facts',
+                    'priority': 'high'
+                })
+            
+            if error_analysis['reasoning_errors'] > 0.2:
+                strategies.append({
+                    'type': 'prompt_engineering',
+                    'action': 'Add chain-of-thought prompting',
+                    'template': """
+                    Let's think step by step:
+                    1. Identify the key facts
+                    2. Verify each fact
+                    3. Construct the answer
+                    """
+                })
+            
+            if error_analysis['hallucination_rate'] > 0.1:
+                strategies.append({
+                    'type': 'grounding',
+                    'action': 'Add retrieval augmentation',
+                    'config': {
+                        'retrieval_k': 5,
+                        'rerank': True
+                    }
+                })
+            
+            return strategies
+    ```
+  </Tab>
+</Tabs>
+
+### 2. 相关性 (Relevance)
+
+```python
+class RelevanceMetric:
+    """相关性指标"""
+    
+    def __init__(self):
+        self.query_analyzer = QueryAnalyzer()
+        self.relevance_model = self.load_relevance_model()
+    
+    def calculate_relevance(self, query, response):
+        """计算查询-响应相关性"""
+        
+        # 多维度相关性评估
+        relevance_scores = {
+            'topical': self.topical_relevance(query, response),
+            'semantic': self.semantic_relevance(query, response),
+            'intent': self.intent_relevance(query, response),
+            'contextual': self.contextual_relevance(query, response)
+        }
+        
+        # 动态权重（根据查询类型）
+        query_type = self.query_analyzer.classify(query)
+        weights = self.get_weights_for_query_type(query_type)
+        
+        overall_relevance = sum(
+            relevance_scores[k] * weights[k] 
+            for k in relevance_scores
+        )
+        
+        return {
+            'score': overall_relevance,
+            'breakdown': relevance_scores,
+            'query_type': query_type,
+            'explanation': self.explain_relevance(relevance_scores)
+        }
+    
+    def topical_relevance(self, query, response):
+        """主题相关性"""
+        
+        # 提取关键词
+        query_keywords = self.extract_keywords(query)
+        response_keywords = self.extract_keywords(response)
+        
+        # 计算Jaccard相似度
+        intersection = set(query_keywords) & set(response_keywords)
+        union = set(query_keywords) | set(response_keywords)
+        
+        jaccard = len(intersection) / len(union) if union else 0
+        
+        # TF-IDF相似度
+        tfidf_similarity = self.calculate_tfidf_similarity(query, response)
+        
+        return (jaccard + tfidf_similarity) / 2
+    
+    def semantic_relevance(self, query, response):
+        """语义相关性"""
+        
+        # 使用预训练模型计算语义相似度
+        query_embedding = self.encode_text(query)
+        response_embedding = self.encode_text(response)
+        
+        # 计算多个相似度指标
+        cosine_sim = self.cosine_similarity(query_embedding, response_embedding)
+        euclidean_sim = 1 / (1 + np.linalg.norm(query_embedding - response_embedding))
+        
+        return (cosine_sim + euclidean_sim) / 2
+    
+    def intent_relevance(self, query, response):
+        """意图匹配度"""
+        
+        # 识别查询意图
+        query_intent = self.query_analyzer.extract_intent(query)
+        
+        # 检查响应是否满足意图
+        intent_satisfaction = self.check_intent_satisfaction(
+            query_intent, 
+            response
+        )
+        
+        return intent_satisfaction
+```
+
+### 3. 完整性 (Completeness)
+
+```python
+class CompletenessMetric:
+    """完整性指标"""
+    
+    def __init__(self):
+        self.aspect_extractor = AspectExtractor()
+        self.coverage_analyzer = CoverageAnalyzer()
+    
+    def calculate_completeness(self, query, response, expected_aspects=None):
+        """计算回答完整性"""
+        
+        # 识别应该涵盖的方面
+        if expected_aspects is None:
+            expected_aspects = self.aspect_extractor.extract_expected_aspects(query)
+        
+        # 检查实际涵盖的方面
+        covered_aspects = self.aspect_extractor.extract_covered_aspects(
+            response, 
+            expected_aspects
+        )
+        
+        # 计算覆盖率
+        coverage_rate = len(covered_aspects) / len(expected_aspects) if expected_aspects else 1.0
+        
+        # 深度评估
+        depth_scores = {}
+        for aspect in covered_aspects:
+            depth_scores[aspect] = self.evaluate_aspect_depth(
+                response, 
+                aspect
+            )
+        
+        avg_depth = np.mean(list(depth_scores.values())) if depth_scores else 0
+        
+        # 结构完整性
+        structural_completeness = self.check_structural_completeness(response)
+        
+        # 综合评分
+        completeness_score = (
+            coverage_rate * 0.5 +
+            avg_depth * 0.3 +
+            structural_completeness * 0.2
+        )
+        
+        return {
+            'score': completeness_score,
+            'coverage_rate': coverage_rate,
+            'depth_score': avg_depth,
+            'structural_score': structural_completeness,
+            'missing_aspects': list(set(expected_aspects) - set(covered_aspects)),
+            'covered_aspects': covered_aspects,
+            'aspect_details': depth_scores
+        }
+    
+    def check_structural_completeness(self, response):
+        """检查结构完整性"""
+        
+        structural_elements = {
+            'has_introduction': self.has_introduction(response),
+            'has_main_content': self.has_main_content(response),
+            'has_conclusion': self.has_conclusion(response),
+            'has_examples': self.has_examples(response),
+            'logical_flow': self.check_logical_flow(response)
+        }
+        
+        # 根据响应类型调整权重
+        weights = self.get_structural_weights(response)
+        
+        score = sum(
+            structural_elements[k] * weights.get(k, 0) 
+            for k in structural_elements
+        )
+        
+        return score
+```
+
+### 4. 一致性 (Consistency)
+
+```python
+class ConsistencyMetric:
+    """一致性指标"""
+    
+    def __init__(self):
+        self.contradiction_detector = ContradictionDetector()
+        self.style_analyzer = StyleAnalyzer()
+    
+    def calculate_consistency(self, response, context=None):
+        """计算一致性得分"""
+        
+        consistency_checks = {}
+        
+        # 1. 内部一致性（自相矛盾检查）
+        consistency_checks['internal'] = self.check_internal_consistency(response)
+        
+        # 2. 上下文一致性
+        if context:
+            consistency_checks['contextual'] = self.check_contextual_consistency(
+                response, context
+            )
+        
+        # 3. 风格一致性
+        consistency_checks['stylistic'] = self.check_stylistic_consistency(response)
+        
+        # 4. 时态一致性
+        consistency_checks['temporal'] = self.check_temporal_consistency(response)
+        
+        # 5. 逻辑一致性
+        consistency_checks['logical'] = self.check_logical_consistency(response)
+        
+        # 综合评分
+        overall_consistency = np.mean(list(consistency_checks.values()))
+        
+        return {
+            'score': overall_consistency,
+            'breakdown': consistency_checks,
+            'issues': self.identify_consistency_issues(consistency_checks),
+            'recommendations': self.generate_consistency_recommendations(consistency_checks)
+        }
+    
+    def check_internal_consistency(self, response):
+        """检查内部一致性"""
+        
+        # 分句
+        sentences = self.split_into_sentences(response)
+        
+        # 检查矛盾
+        contradictions = []
+        for i, sent1 in enumerate(sentences):
+            for sent2 in sentences[i+1:]:
+                if self.contradiction_detector.detect(sent1, sent2):
+                    contradictions.append((sent1, sent2))
+        
+        # 计算一致性分数
+        consistency_score = 1 - (len(contradictions) / max(len(sentences) - 1, 1))
+        
+        return consistency_score
+```
+
+### 5. 流畅性 (Fluency)
+
+```python
+class FluencyMetric:
+    """流畅性指标"""
+    
+    def __init__(self):
+        self.language_model = self.load_language_model()
+        self.readability_analyzer = ReadabilityAnalyzer()
+    
+    def calculate_fluency(self, text):
+        """计算文本流畅性"""
+        
+        fluency_scores = {}
+        
+        # 1. 语言模型困惑度（越低越流畅）
+        perplexity = self.calculate_perplexity(text)
+        fluency_scores['perplexity'] = 1 / (1 + np.log(perplexity))
+        
+        # 2. 语法正确性
+        grammar_score = self.check_grammar(text)
+        fluency_scores['grammar'] = grammar_score
+        
+        # 3. 可读性指标
+        readability = self.readability_analyzer.analyze(text)
+        fluency_scores['readability'] = self.normalize_readability(readability)
+        
+        # 4. 句子连贯性
+        coherence = self.check_sentence_coherence(text)
+        fluency_scores['coherence'] = coherence
+        
+        # 5. 词汇多样性
+        lexical_diversity = self.calculate_lexical_diversity(text)
+        fluency_scores['lexical_diversity'] = lexical_diversity
+        
+        # 综合评分
+        weights = {
+            'perplexity': 0.25,
+            'grammar': 0.25,
+            'readability': 0.20,
+            'coherence': 0.20,
+            'lexical_diversity': 0.10
+        }
+        
+        overall_fluency = sum(
+            fluency_scores[k] * weights[k] 
+            for k in weights
+        )
+        
+        return {
+            'score': overall_fluency,
+            'breakdown': fluency_scores,
+            'readability_level': readability['level'],
+            'issues': self.identify_fluency_issues(fluency_scores)
+        }
+    
+    def calculate_perplexity(self, text):
+        """计算困惑度"""
+        
+        from transformers import GPT2LMHeadModel, GPT2Tokenizer
+        import torch
+        
+        tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+        model = GPT2LMHeadModel.from_pretrained('gpt2')
+        
+        inputs = tokenizer(text, return_tensors="pt")
+        
+        with torch.no_grad():
+            outputs = model(**inputs, labels=inputs["input_ids"])
+            loss = outputs.loss
+            perplexity = torch.exp(loss)
+        
+        return perplexity.item()
+```
+
+## 高级质量指标
+
+### 1. 创造性 (Creativity)
+
+```python
+class CreativityMetric:
+    """创造性指标"""
+    
+    def calculate_creativity(self, text, reference_corpus=None):
+        """评估文本创造性"""
+        
+        creativity_scores = {}
+        
+        # 1. 新颖性（与参考语料的差异）
+        if reference_corpus:
+            novelty = self.calculate_novelty(text, reference_corpus)
+            creativity_scores['novelty'] = novelty
+        
+        # 2. 独特性（词汇和句式）
+        uniqueness = self.calculate_uniqueness(text)
+        creativity_scores['uniqueness'] = uniqueness
+        
+        # 3. 想象力（隐喻和类比使用）
+        imagination = self.assess_imagination(text)
+        creativity_scores['imagination'] = imagination
+        
+        # 4. 复杂性（思维深度）
+        complexity = self.assess_complexity(text)
+        creativity_scores['complexity'] = complexity
+        
+        return {
+            'score': np.mean(list(creativity_scores.values())),
+            'breakdown': creativity_scores
+        }
+```
+
+### 2. 洞察力 (Insightfulness)
+
+```python
+class InsightfulnessMetric:
+    """洞察力指标"""
+    
+    def calculate_insightfulness(self, text, context):
+        """评估文本的洞察力"""
+        
+        # 识别洞察性陈述
+        insights = self.extract_insights(text)
+        
+        # 评估每个洞察的质量
+        insight_qualities = []
+        for insight in insights:
+            quality = {
+                'depth': self.assess_depth(insight),
+                'novelty': self.assess_novelty(insight, context),
+                'relevance': self.assess_relevance(insight, context),
+                'actionability': self.assess_actionability(insight)
+            }
+            insight_qualities.append(quality)
+        
+        # 计算总体洞察力分数
+        if insight_qualities:
+            avg_quality = {
+                key: np.mean([q[key] for q in insight_qualities])
+                for key in insight_qualities[0]
+            }
+            overall_score = np.mean(list(avg_quality.values()))
+        else:
+            overall_score = 0
+            avg_quality = {}
+        
+        return {
+            'score': overall_score,
+            'num_insights': len(insights),
+            'quality_breakdown': avg_quality,
+            'top_insights': insights[:3] if insights else []
+        }
+```
+
+## 质量指标聚合
+
+### 综合质量评分
+
+```python
+class QualityAggregator:
+    """质量指标聚合器"""
+    
+    def __init__(self):
+        self.metrics = {
+            'accuracy': AccuracyMetric(),
+            'relevance': RelevanceMetric(),
+            'completeness': CompletenessMetric(),
+            'consistency': ConsistencyMetric(),
+            'fluency': FluencyMetric()
+        }
+    
+    def calculate_overall_quality(self, query, response, context=None):
+        """计算综合质量分数"""
+        
+        # 计算各项指标
+        scores = {}
+        for metric_name, metric in self.metrics.items():
+            if metric_name == 'relevance':
+                scores[metric_name] = metric.calculate_relevance(query, response)
+            elif metric_name == 'completeness':
+                scores[metric_name] = metric.calculate_completeness(query, response)
+            elif metric_name == 'consistency':
+                scores[metric_name] = metric.calculate_consistency(response, context)
+            else:
+                scores[metric_name] = metric.calculate(response)
+        
+        # 动态权重（根据任务类型）
+        task_type = self.identify_task_type(query)
+        weights = self.get_weights_for_task(task_type)
+        
+        # 计算加权平均
+        overall_score = sum(
+            scores[metric]['score'] * weights[metric]
+            for metric in weights
+        )
+        
+        # 识别瓶颈
+        bottlenecks = self.identify_bottlenecks(scores, weights)
+        
+        return {
+            'overall_quality': overall_score,
+            'metric_scores': scores,
+            'weights': weights,
+            'task_type': task_type,
+            'bottlenecks': bottlenecks,
+            'improvement_suggestions': self.generate_improvements(bottlenecks)
+        }
+    
+    def get_weights_for_task(self, task_type):
+        """根据任务类型获取权重"""
+        
+        weight_profiles = {
+            'factual_qa': {
+                'accuracy': 0.4,
+                'relevance': 0.2,
+                'completeness': 0.2,
+                'consistency': 0.1,
+                'fluency': 0.1
+            },
+            'creative_writing': {
+                'accuracy': 0.1,
+                'relevance': 0.2,
+                'completeness': 0.2,
+                'consistency': 0.2,
+                'fluency': 0.3
+            },
+            'analysis': {
+                'accuracy': 0.25,
+                'relevance': 0.25,
+                'completeness': 0.25,
+                'consistency': 0.15,
+                'fluency': 0.1
+            }
+        }
+        
+        return weight_profiles.get(task_type, {
+            'accuracy': 0.2,
+            'relevance': 0.2,
+            'completeness': 0.2,
+            'consistency': 0.2,
+            'fluency': 0.2
+        })
+```
+
+## 质量指标可视化
+
+```python
+class QualityVisualizer:
+    """质量指标可视化"""
+    
+    def create_quality_dashboard(self, quality_scores):
+        """创建质量仪表板"""
+        
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        # 创建子图
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=('质量雷达图', '指标趋势', '分布直方图', '热力图'),
+            specs=[[{'type': 'polar'}, {'type': 'scatter'}],
+                   [{'type': 'histogram'}, {'type': 'heatmap'}]]
+        )
+        
+        # 1. 雷达图
+        metrics = list(quality_scores['metric_scores'].keys())
+        values = [quality_scores['metric_scores'][m]['score'] for m in metrics]
+        
+        fig.add_trace(
+            go.Scatterpolar(r=values, theta=metrics, fill='toself', name='当前'),
+            row=1, col=1
+        )
+        
+        # 2. 趋势图
+        # ... 添加历史趋势
+        
+        # 3. 分布图
+        # ... 添加分数分布
+        
+        # 4. 热力图
+        # ... 添加相关性热力图
+        
+        fig.update_layout(height=800, showlegend=True)
+        
+        return fig
+```
+
+## 最佳实践
+
+<Cards>
+  <Card title="多维度评估">
+    不要依赖单一质量指标，综合多个维度评估
+  </Card>
+  
+  <Card title="任务适配">
+    根据具体任务调整指标权重和评估标准
+  </Card>
+  
+  <Card title="持续校准">
+    定期用人工评估校准自动化质量指标
+  </Card>
+  
+  <Card title="可解释性">
+    提供清晰的质量评分解释和改进建议
+  </Card>
+</Cards>
+
+## 关键要点
+
+- ✅ 质量指标需要综合多个维度
+- ✅ 不同任务需要不同的指标权重
+- ✅ 自动化指标需要人工校准
+- ✅ 质量评估应该提供可操作的改进建议
+- ✅ 可视化帮助更好地理解质量问题

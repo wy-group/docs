@@ -1,0 +1,599 @@
+---
+title: 评估方法总览
+description: 全面了解各种 LLM 评估方法，学会选择最适合的评估策略
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 评估方法总览
+
+选择合适的评估方法是构建有效评估体系的关键。本章将帮助你理解各种评估方法的特点，并根据实际需求做出最佳选择。
+
+## 评估方法分类体系
+
+<Mermaid
+  chart="
+graph TD
+    A[评估方法] --> B[自动化评估]
+    A --> C[人工评估]
+    A --> D[混合评估]
+    
+    B --> B1[基于规则]
+    B --> B2[基于模型]
+    B --> B3[基于统计]
+    
+    C --> C1[专家评估]
+    C --> C2[众包评估]
+    C --> C3[用户反馈]
+    
+    D --> D1[人机协同]
+    D --> D2[分层评估]
+    D --> D3[主动学习]
+"
+/>
+
+## 评估方法对比矩阵
+
+| 方法 | 成本 | 速度 | 准确性 | 可扩展性 | 适用场景 |
+|------|------|------|--------|----------|----------|
+| **LLM-as-Judge** | 中 | 快 | 高 | 优秀 | 通用评估、大规模测试 |
+| **人工标注** | 高 | 慢 | 最高 | 差 | 高价值场景、基准建立 |
+| **用户反馈** | 低 | 中 | 中 | 良好 | 生产环境、持续改进 |
+| **规则匹配** | 低 | 最快 | 中 | 优秀 | 结构化任务、精确匹配 |
+| **统计指标** | 低 | 快 | 中 | 优秀 | 文本生成、翻译任务 |
+| **A/B测试** | 中 | 慢 | 高 | 良好 | 版本对比、功能验证 |
+| **红队测试** | 高 | 慢 | 高 | 差 | 安全评估、对抗测试 |
+
+## 决策树：如何选择评估方法
+
+<Mermaid
+  chart="
+graph TD
+    Start[开始选择] --> Q1{预算充足？}
+    Q1 -->|是| Q2{需要高准确性？}
+    Q1 -->|否| Q3{任务类型？}
+    
+    Q2 -->|是| M1[人工标注 + LLM-as-Judge]
+    Q2 -->|否| M2[LLM-as-Judge]
+    
+    Q3 -->|生成类| M3[LLM-as-Judge + 统计指标]
+    Q3 -->|分类类| M4[规则匹配 + 自动指标]
+    Q3 -->|对话类| M5[用户反馈 + LLM-as-Judge]
+    
+    M1 --> Q4{需要实时评估？}
+    Q4 -->|是| F1[建立自动化流程]
+    Q4 -->|否| F2[批量评估]
+    
+    style Start fill:#f9f,stroke:#333,stroke-width:2px
+    style F1 fill:#9f9,stroke:#333,stroke-width:2px
+    style F2 fill:#9f9,stroke:#333,stroke-width:2px
+"
+/>
+
+## 1. LLM-as-Judge（LLM 作为评判者）
+
+### 核心原理
+使用另一个大语言模型来评估目标模型的输出质量。
+
+### 优势与劣势
+
+<Tabs items={['优势', '劣势', '最佳实践']}>
+  <Tab value="优势">
+    - ✅ **可扩展**：能够处理大规模评估任务
+    - ✅ **一致性**：评估标准保持稳定
+    - ✅ **灵活性**：可以评估各种类型的输出
+    - ✅ **成本效益**：相比人工评估成本更低
+    - ✅ **快速迭代**：支持快速实验和改进
+  </Tab>
+  
+  <Tab value="劣势">
+    - ❌ **模型偏见**：可能继承评判模型的偏见
+    - ❌ **循环依赖**：用 LLM 评估 LLM 的局限性
+    - ❌ **成本累加**：大规模使用仍有成本
+    - ❌ **黑盒特性**：评估逻辑不够透明
+    - ❌ **幻觉风险**：评判模型也可能产生幻觉
+  </Tab>
+  
+  <Tab value="最佳实践">
+    ```python
+    # 最佳实践示例
+    class LLMJudge:
+        def __init__(self, model="gpt-4"):
+            self.model = model
+            self.evaluation_prompt_template = """
+            请作为专业评审员，根据以下标准评估输出质量：
+            
+            评估标准：
+            1. 准确性（40%）：信息是否正确
+            2. 相关性（30%）：是否回答了问题
+            3. 完整性（20%）：是否涵盖所有要点
+            4. 清晰度（10%）：表达是否清晰
+            
+            输入：{input}
+            输出：{output}
+            
+            请提供：
+            1. 各维度评分（0-10）
+            2. 总体评分（0-10）
+            3. 具体反馈
+            
+            格式：JSON
+            """
+    ```
+  </Tab>
+</Tabs>
+
+### 实施框架
+
+```python
+def llm_judge_evaluation(input_text, output_text, criteria):
+    """
+    LLM-as-Judge 评估实施
+    """
+    # 1. 构建评估提示词
+    evaluation_prompt = build_evaluation_prompt(
+        input_text, 
+        output_text, 
+        criteria
+    )
+    
+    # 2. 调用评判模型
+    judge_response = call_judge_model(evaluation_prompt)
+    
+    # 3. 解析评估结果
+    scores = parse_evaluation_response(judge_response)
+    
+    # 4. 验证和归一化
+    validated_scores = validate_and_normalize(scores)
+    
+    return validated_scores
+```
+
+## 2. 人工标注
+
+### 标注流程设计
+
+<Steps>
+  <Step>
+    ### 准备阶段
+    - 制定标注指南
+    - 培训标注人员
+    - 建立质量标准
+  </Step>
+  
+  <Step>
+    ### 执行阶段
+    - 分配标注任务
+    - 进行标注工作
+    - 质量检查
+  </Step>
+  
+  <Step>
+    ### 验证阶段
+    - 计算一致性
+    - 解决分歧
+    - 最终确认
+  </Step>
+</Steps>
+
+### 标注界面示例
+
+```typescript
+interface AnnotationTask {
+  id: string;
+  input: string;
+  output: string;
+  annotator: string;
+  annotations: {
+    accuracy: number;        // 1-5 scale
+    relevance: number;       // 1-5 scale
+    fluency: number;        // 1-5 scale
+    safety: boolean;        // pass/fail
+    feedback: string;       // text feedback
+  };
+  metadata: {
+    time_spent: number;     // seconds
+    confidence: number;     // 0-1
+    difficulty: string;     // easy/medium/hard
+  };
+}
+```
+
+### 质量控制机制
+
+```python
+class QualityControl:
+    """人工标注质量控制"""
+    
+    def calculate_inter_rater_agreement(self, annotations):
+        """计算标注者间一致性（Cohen's Kappa）"""
+        from sklearn.metrics import cohen_kappa_score
+        
+        rater1_scores = [a['rater1'] for a in annotations]
+        rater2_scores = [a['rater2'] for a in annotations]
+        
+        kappa = cohen_kappa_score(rater1_scores, rater2_scores)
+        
+        # 解释 Kappa 值
+        if kappa < 0.20:
+            agreement = "极低"
+        elif kappa < 0.40:
+            agreement = "低"
+        elif kappa < 0.60:
+            agreement = "中等"
+        elif kappa < 0.80:
+            agreement = "高"
+        else:
+            agreement = "极高"
+            
+        return {
+            "kappa": kappa,
+            "agreement_level": agreement
+        }
+    
+    def identify_outliers(self, annotations):
+        """识别异常标注"""
+        import numpy as np
+        
+        scores = [a['score'] for a in annotations]
+        mean = np.mean(scores)
+        std = np.std(scores)
+        
+        outliers = []
+        for i, score in enumerate(scores):
+            z_score = (score - mean) / std
+            if abs(z_score) > 2:  # 2个标准差之外
+                outliers.append({
+                    "index": i,
+                    "score": score,
+                    "z_score": z_score
+                })
+        
+        return outliers
+```
+
+## 3. 用户反馈
+
+### 反馈收集策略
+
+<Cards>
+  <Card title="隐式反馈">
+    ```python
+    # 通过用户行为推断满意度
+    implicit_signals = {
+        "copy_response": +1,      # 复制回答
+        "continue_conversation": +1,  # 继续对话
+        "regenerate": -1,         # 重新生成
+        "close_quickly": -1       # 快速关闭
+    }
+    ```
+  </Card>
+  
+  <Card title="显式反馈">
+    ```python
+    # 直接询问用户评价
+    explicit_feedback = {
+        "thumbs_up": 1.0,
+        "thumbs_down": 0.0,
+        "rating": 0.0-5.0,
+        "comment": "text"
+    }
+    ```
+  </Card>
+  
+  <Card title="混合反馈">
+    ```python
+    # 结合多种信号
+    combined_score = (
+        0.3 * implicit_score +
+        0.7 * explicit_score
+    )
+    ```
+  </Card>
+</Cards>
+
+### 反馈系统实现
+
+```python
+class FeedbackCollector:
+    """用户反馈收集系统"""
+    
+    def __init__(self):
+        self.feedback_queue = []
+        self.aggregated_scores = {}
+    
+    def collect_feedback(self, session_id, feedback_type, value):
+        """收集反馈"""
+        feedback = {
+            "session_id": session_id,
+            "timestamp": datetime.now(),
+            "type": feedback_type,
+            "value": value,
+            "context": self.get_session_context(session_id)
+        }
+        
+        self.feedback_queue.append(feedback)
+        
+        # 实时处理高优先级反馈
+        if feedback_type in ["safety_issue", "major_error"]:
+            self.handle_critical_feedback(feedback)
+    
+    def aggregate_feedback(self, time_window="1h"):
+        """聚合反馈数据"""
+        recent_feedback = self.get_recent_feedback(time_window)
+        
+        aggregated = {
+            "total_count": len(recent_feedback),
+            "positive_rate": self.calculate_positive_rate(recent_feedback),
+            "average_rating": self.calculate_average_rating(recent_feedback),
+            "top_issues": self.identify_top_issues(recent_feedback),
+            "trend": self.calculate_trend(recent_feedback)
+        }
+        
+        return aggregated
+```
+
+## 4. 自动化指标
+
+### 常用自动化指标
+
+| 指标类型 | 指标名称 | 计算方法 | 适用场景 |
+|---------|---------|---------|---------|
+| **词汇重叠** | BLEU | N-gram精确率 | 机器翻译 |
+| | ROUGE | N-gram召回率 | 文本摘要 |
+| | METEOR | 同义词匹配 | 翻译质量 |
+| **语义相似** | BERTScore | BERT嵌入相似度 | 语义评估 |
+| | Embedding距离 | 余弦相似度 | 语义匹配 |
+| **语言质量** | Perplexity | 语言模型困惑度 | 流畅性 |
+| | Grammar Score | 语法检查 | 语法正确性 |
+| **任务特定** | Accuracy | 正确率 | 分类任务 |
+| | F1 Score | 精确率与召回率调和 | 不平衡数据 |
+| | NDCG | 排序质量 | 推荐系统 |
+
+### 指标计算实现
+
+```python
+class AutoMetrics:
+    """自动化指标计算"""
+    
+    @staticmethod
+    def calculate_bleu(reference, hypothesis):
+        """计算 BLEU 分数"""
+        from nltk.translate.bleu_score import sentence_bleu
+        
+        reference_tokens = reference.split()
+        hypothesis_tokens = hypothesis.split()
+        
+        # 计算不同 n-gram 的 BLEU
+        bleu1 = sentence_bleu([reference_tokens], hypothesis_tokens, 
+                              weights=(1, 0, 0, 0))
+        bleu2 = sentence_bleu([reference_tokens], hypothesis_tokens, 
+                              weights=(0.5, 0.5, 0, 0))
+        bleu4 = sentence_bleu([reference_tokens], hypothesis_tokens, 
+                              weights=(0.25, 0.25, 0.25, 0.25))
+        
+        return {
+            "bleu1": bleu1,
+            "bleu2": bleu2,
+            "bleu4": bleu4
+        }
+    
+    @staticmethod
+    def calculate_bertscore(reference, hypothesis):
+        """计算 BERTScore"""
+        from bert_score import score
+        
+        P, R, F1 = score([hypothesis], [reference], lang="zh")
+        
+        return {
+            "precision": P.item(),
+            "recall": R.item(),
+            "f1": F1.item()
+        }
+    
+    @staticmethod
+    def calculate_semantic_similarity(text1, text2):
+        """计算语义相似度"""
+        from sentence_transformers import SentenceTransformer
+        import torch
+        
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        
+        embeddings1 = model.encode(text1)
+        embeddings2 = model.encode(text2)
+        
+        # 计算余弦相似度
+        similarity = torch.nn.functional.cosine_similarity(
+            torch.tensor(embeddings1).unsqueeze(0),
+            torch.tensor(embeddings2).unsqueeze(0)
+        )
+        
+        return similarity.item()
+```
+
+## 5. 混合评估策略
+
+### 分层评估架构
+
+<Mermaid
+  chart="
+graph TB
+    A[输入数据] --> B[第一层: 自动过滤]
+    B --> C{通过?}
+    C -->|否| D[直接拒绝]
+    C -->|是| E[第二层: LLM评估]
+    E --> F{置信度高?}
+    F -->|是| G[接受结果]
+    F -->|否| H[第三层: 人工审核]
+    H --> I[最终结果]
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style G fill:#9f9,stroke:#333,stroke-width:2px
+    style I fill:#9f9,stroke:#333,stroke-width:2px
+    style D fill:#f99,stroke:#333,stroke-width:2px
+"
+/>
+
+### 混合策略实现
+
+```python
+class HybridEvaluator:
+    """混合评估策略"""
+    
+    def __init__(self):
+        self.auto_threshold = 0.95  # 自动通过阈值
+        self.manual_threshold = 0.60  # 需要人工审核阈值
+    
+    def evaluate(self, input_text, output_text):
+        """执行混合评估"""
+        
+        # 第一步：快速自动检查
+        auto_score = self.quick_auto_check(output_text)
+        if auto_score < self.manual_threshold:
+            return {"status": "rejected", "score": auto_score}
+        
+        # 第二步：LLM 详细评估
+        llm_result = self.llm_evaluation(input_text, output_text)
+        
+        # 第三步：决定是否需要人工
+        if llm_result["confidence"] > self.auto_threshold:
+            return {
+                "status": "approved",
+                "score": llm_result["score"],
+                "method": "automatic"
+            }
+        else:
+            # 添加到人工审核队列
+            human_result = self.queue_for_human_review(
+                input_text, 
+                output_text, 
+                llm_result
+            )
+            return {
+                "status": "pending_review",
+                "preliminary_score": llm_result["score"],
+                "method": "hybrid"
+            }
+    
+    def quick_auto_check(self, text):
+        """快速自动检查"""
+        checks = {
+            "length": len(text) > 10 and len(text) < 10000,
+            "language": self.detect_language(text) == "expected",
+            "toxicity": self.toxicity_check(text) < 0.1,
+            "format": self.format_check(text)
+        }
+        
+        passed = sum(checks.values())
+        total = len(checks)
+        
+        return passed / total
+```
+
+## 评估方法选择指南
+
+### 基于场景的推荐
+
+<Callout type="info">
+**黄金法则**：没有万能的评估方法，最好的策略是根据具体需求组合使用多种方法。
+</Callout>
+
+| 应用场景 | 推荐方法组合 | 理由 |
+|---------|-------------|------|
+| **客服聊天机器人** | LLM-as-Judge + 用户反馈 | 需要快速迭代和真实用户体验 |
+| **医疗咨询助手** | 人工专家 + LLM-as-Judge | 准确性要求极高，需要专业判断 |
+| **代码生成工具** | 自动化测试 + LLM评估 | 可以自动验证代码正确性 |
+| **创意写作助手** | LLM-as-Judge + 人工抽检 | 创意难以量化，需要主观评价 |
+| **搜索引擎** | 自动指标 + A/B测试 | 有明确的性能指标和用户行为数据 |
+| **翻译系统** | BLEU/BERTScore + 人工评估 | 结合自动指标和人工质量把关 |
+
+### 成本效益分析
+
+```python
+def calculate_evaluation_roi(method_config):
+    """
+    计算评估方法的投资回报率
+    """
+    costs = {
+        "human": 100,      # 每1000条样本
+        "llm_judge": 10,   # API 调用成本
+        "automatic": 1,    # 计算资源成本
+        "user_feedback": 0 # 免费但有延迟
+    }
+    
+    accuracy_gains = {
+        "human": 0.95,
+        "llm_judge": 0.85,
+        "automatic": 0.70,
+        "user_feedback": 0.75
+    }
+    
+    # 计算综合得分
+    method_scores = {}
+    for method, weight in method_config.items():
+        cost = costs[method] * weight
+        accuracy = accuracy_gains[method] * weight
+        roi = accuracy / cost if cost > 0 else float('inf')
+        method_scores[method] = {
+            "cost": cost,
+            "accuracy": accuracy,
+            "roi": roi
+        }
+    
+    return method_scores
+```
+
+## 实施建议
+
+### 渐进式实施路线图
+
+<Steps>
+  <Step>
+    ### Phase 1: 基础建设（第1-2周）
+    - 实施基本的 LLM-as-Judge
+    - 设置简单的自动化指标
+    - 建立评估数据收集机制
+  </Step>
+  
+  <Step>
+    ### Phase 2: 优化提升（第3-4周）
+    - 引入人工标注验证
+    - 优化评估提示词
+    - 建立质量基准线
+  </Step>
+  
+  <Step>
+    ### Phase 3: 规模化（第5-6周）
+    - 实现混合评估策略
+    - 自动化评估流程
+    - 集成到 CI/CD
+  </Step>
+  
+  <Step>
+    ### Phase 4: 持续改进（长期）
+    - 收集用户反馈
+    - 定期更新评估标准
+    - 优化成本效益
+  </Step>
+</Steps>
+
+## 关键要点总结
+
+- ✅ **组合使用**：结合多种方法取长补短
+- ✅ **成本意识**：平衡准确性和成本
+- ✅ **持续优化**：评估方法需要不断改进
+- ✅ **场景适配**：根据具体场景选择方法
+- ✅ **质量控制**：建立质量保证机制
+
+## 下一步
+
+深入了解具体的评估方法实现：
+
+<Cards>
+  <Card title="LLM-as-Judge 详解" href="/docs/evaluation-methods/llm-as-judge" description="深入理解 LLM 评判的原理和实践" />
+  <Card title="人工标注系统" href="/docs/evaluation-methods/human-annotation" description="构建高质量的人工标注流程" />
+  <Card title="用户反馈机制" href="/docs/evaluation-methods/user-feedback" description="设计有效的用户反馈收集系统" />
+</Cards>

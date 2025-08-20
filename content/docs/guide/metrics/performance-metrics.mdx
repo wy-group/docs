@@ -1,0 +1,888 @@
+---
+title: 性能指标
+description: 深入了解 LLM 系统的性能评估指标，包括延迟、吞吐量、资源利用等
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 性能指标
+
+性能指标是评估 LLM 系统效率和可扩展性的关键。本章详细介绍各种性能指标的测量、优化和监控方法。
+
+## 性能指标体系
+
+### 指标分类框架
+
+<Mermaid
+  chart="
+graph TD
+    A[性能指标] --> B[时间指标]
+    A --> C[资源指标]
+    A --> D[吞吐指标]
+    A --> E[成本指标]
+    
+    B --> B1[延迟]
+    B --> B2[响应时间]
+    B --> B3[首字时间]
+    
+    C --> C1[CPU使用]
+    C --> C2[内存占用]
+    C --> C3[GPU利用率]
+    
+    D --> D1[QPS]
+    D --> D2[并发数]
+    D --> D3[Token/秒]
+    
+    E --> E1[单位成本]
+    E --> E2[TCO]
+    E --> E3[ROI]
+"
+/>
+
+## 核心性能指标
+
+### 1. 延迟 (Latency)
+
+<Tabs items={['定义与测量', '实现代码', '优化策略', '监控告警']}>
+  <Tab value="定义与测量">
+    **延迟类型**：
+    - **端到端延迟 (E2E)**：用户发起请求到收到完整响应
+    - **首字延迟 (TTFT)**：Time to First Token
+    - **生成延迟**：模型推理时间
+    - **网络延迟**：数据传输时间
+    
+    **测量标准**：
+    ```python
+    latency_benchmarks = {
+        'excellent': '<100ms',
+        'good': '100-500ms',
+        'acceptable': '500-1000ms',
+        'poor': '1-3s',
+        'unacceptable': '>3s'
+    }
+    ```
+    
+    **统计指标**：
+    - P50 (中位数)
+    - P90 (90分位)
+    - P95 (95分位)
+    - P99 (99分位)
+    - 平均值
+    - 标准差
+  </Tab>
+  
+  <Tab value="实现代码">
+    ```python
+    import time
+    import asyncio
+    from dataclasses import dataclass
+    from typing import List, Dict
+    import numpy as np
+    
+    @dataclass
+    class LatencyMetrics:
+        """延迟指标数据类"""
+        request_id: str
+        start_time: float
+        first_token_time: float = None
+        end_time: float = None
+        token_count: int = 0
+        
+        @property
+        def ttft(self) -> float:
+            """首字延迟"""
+            if self.first_token_time:
+                return self.first_token_time - self.start_time
+            return None
+        
+        @property
+        def total_latency(self) -> float:
+            """总延迟"""
+            if self.end_time:
+                return self.end_time - self.start_time
+            return None
+        
+        @property
+        def generation_latency(self) -> float:
+            """生成延迟"""
+            if self.first_token_time and self.end_time:
+                return self.end_time - self.first_token_time
+            return None
+        
+        @property
+        def tokens_per_second(self) -> float:
+            """Token生成速度"""
+            if self.generation_latency and self.token_count > 0:
+                return self.token_count / self.generation_latency
+            return 0
+    
+    class LatencyTracker:
+        """延迟追踪器"""
+        
+        def __init__(self):
+            self.metrics: Dict[str, LatencyMetrics] = {}
+            self.history: List[LatencyMetrics] = []
+        
+        async def track_request(self, request_id: str, func, *args, **kwargs):
+            """追踪请求延迟"""
+            
+            metrics = LatencyMetrics(
+                request_id=request_id,
+                start_time=time.perf_counter()
+            )
+            
+            self.metrics[request_id] = metrics
+            
+            try:
+                # 执行实际请求
+                async for token in func(*args, **kwargs):
+                    if metrics.first_token_time is None:
+                        metrics.first_token_time = time.perf_counter()
+                    
+                    metrics.token_count += 1
+                    yield token
+                
+                metrics.end_time = time.perf_counter()
+                
+            finally:
+                self.history.append(metrics)
+                del self.metrics[request_id]
+        
+        def get_statistics(self) -> Dict:
+            """获取延迟统计"""
+            
+            if not self.history:
+                return {}
+            
+            ttfts = [m.ttft for m in self.history if m.ttft]
+            total_latencies = [m.total_latency for m in self.history if m.total_latency]
+            tps = [m.tokens_per_second for m in self.history if m.tokens_per_second > 0]
+            
+            return {
+                'ttft': {
+                    'p50': np.percentile(ttfts, 50) if ttfts else None,
+                    'p90': np.percentile(ttfts, 90) if ttfts else None,
+                    'p95': np.percentile(ttfts, 95) if ttfts else None,
+                    'p99': np.percentile(ttfts, 99) if ttfts else None,
+                    'mean': np.mean(ttfts) if ttfts else None,
+                    'std': np.std(ttfts) if ttfts else None
+                },
+                'total_latency': {
+                    'p50': np.percentile(total_latencies, 50) if total_latencies else None,
+                    'p90': np.percentile(total_latencies, 90) if total_latencies else None,
+                    'p95': np.percentile(total_latencies, 95) if total_latencies else None,
+                    'p99': np.percentile(total_latencies, 99) if total_latencies else None,
+                    'mean': np.mean(total_latencies) if total_latencies else None,
+                    'std': np.std(total_latencies) if total_latencies else None
+                },
+                'tokens_per_second': {
+                    'mean': np.mean(tps) if tps else None,
+                    'std': np.std(tps) if tps else None,
+                    'min': np.min(tps) if tps else None,
+                    'max': np.max(tps) if tps else None
+                },
+                'sample_count': len(self.history)
+            }
+    ```
+  </Tab>
+  
+  <Tab value="优化策略">
+    ```python
+    class LatencyOptimizer:
+        """延迟优化器"""
+        
+        def __init__(self):
+            self.cache = ResponseCache()
+            self.batch_processor = BatchProcessor()
+            self.model_router = ModelRouter()
+        
+        async def optimize_request(self, request):
+            """优化请求延迟"""
+            
+            optimizations = []
+            
+            # 1. 缓存策略
+            cache_key = self.generate_cache_key(request)
+            if cached_response := await self.cache.get(cache_key):
+                return {
+                    'response': cached_response,
+                    'optimization': 'cache_hit',
+                    'latency': 0
+                }
+            
+            # 2. 批处理优化
+            if self.can_batch(request):
+                optimizations.append('batching')
+                request = await self.batch_processor.add_to_batch(request)
+            
+            # 3. 模型路由优化
+            optimal_model = self.model_router.select_model(request)
+            if optimal_model != request.model:
+                optimizations.append(f'model_routing: {optimal_model}')
+                request.model = optimal_model
+            
+            # 4. 流式响应优化
+            if request.supports_streaming:
+                optimizations.append('streaming')
+                return self.stream_response(request)
+            
+            # 5. 预计算优化
+            if precomputed := self.get_precomputed_embeddings(request):
+                optimizations.append('precomputed_embeddings')
+                request.embeddings = precomputed
+            
+            return {
+                'request': request,
+                'optimizations': optimizations
+            }
+        
+        def reduce_ttft(self, config):
+            """减少首字延迟的策略"""
+            
+            strategies = {
+                'prefill_optimization': {
+                    'action': 'Enable KV cache',
+                    'impact': '30-50% reduction',
+                    'config': {
+                        'use_cache': True,
+                        'cache_size': 2048
+                    }
+                },
+                'model_quantization': {
+                    'action': 'Use INT8 quantization',
+                    'impact': '40-60% reduction',
+                    'config': {
+                        'quantization': 'int8',
+                        'calibration_samples': 1000
+                    }
+                },
+                'speculative_decoding': {
+                    'action': 'Use draft model',
+                    'impact': '20-30% reduction',
+                    'config': {
+                        'draft_model': 'small_model',
+                        'verification_batch_size': 4
+                    }
+                }
+            }
+            
+            return strategies
+    ```
+  </Tab>
+  
+  <Tab value="监控告警">
+    ```python
+    class LatencyMonitor:
+        """延迟监控系统"""
+        
+        def __init__(self):
+            self.thresholds = {
+                'ttft': {
+                    'warning': 500,  # ms
+                    'critical': 1000
+                },
+                'total_latency': {
+                    'warning': 2000,
+                    'critical': 5000
+                },
+                'p99': {
+                    'warning': 3000,
+                    'critical': 10000
+                }
+            }
+            self.alert_manager = AlertManager()
+        
+        async def monitor(self, metrics: LatencyMetrics):
+            """监控延迟指标"""
+            
+            alerts = []
+            
+            # 检查TTFT
+            if metrics.ttft:
+                ttft_ms = metrics.ttft * 1000
+                if ttft_ms > self.thresholds['ttft']['critical']:
+                    alerts.append({
+                        'severity': 'critical',
+                        'metric': 'ttft',
+                        'value': ttft_ms,
+                        'threshold': self.thresholds['ttft']['critical'],
+                        'message': f'TTFT critically high: {ttft_ms:.0f}ms'
+                    })
+                elif ttft_ms > self.thresholds['ttft']['warning']:
+                    alerts.append({
+                        'severity': 'warning',
+                        'metric': 'ttft',
+                        'value': ttft_ms,
+                        'threshold': self.thresholds['ttft']['warning'],
+                        'message': f'TTFT high: {ttft_ms:.0f}ms'
+                    })
+            
+            # 检查总延迟
+            if metrics.total_latency:
+                total_ms = metrics.total_latency * 1000
+                if total_ms > self.thresholds['total_latency']['critical']:
+                    alerts.append({
+                        'severity': 'critical',
+                        'metric': 'total_latency',
+                        'value': total_ms,
+                        'threshold': self.thresholds['total_latency']['critical'],
+                        'message': f'Total latency critically high: {total_ms:.0f}ms'
+                    })
+            
+            # 发送告警
+            for alert in alerts:
+                await self.alert_manager.send_alert(alert)
+            
+            return alerts
+    ```
+  </Tab>
+</Tabs>
+
+### 2. 吞吐量 (Throughput)
+
+```python
+class ThroughputMetrics:
+    """吞吐量指标"""
+    
+    def __init__(self):
+        self.request_counter = 0
+        self.token_counter = 0
+        self.start_time = time.time()
+        self.window_size = 60  # 60秒窗口
+        self.request_history = []
+        self.token_history = []
+    
+    def record_request(self, token_count: int):
+        """记录请求"""
+        current_time = time.time()
+        
+        self.request_counter += 1
+        self.token_counter += token_count
+        
+        # 添加到历史记录
+        self.request_history.append((current_time, 1))
+        self.token_history.append((current_time, token_count))
+        
+        # 清理过期记录
+        self._cleanup_old_records(current_time)
+    
+    def _cleanup_old_records(self, current_time):
+        """清理过期记录"""
+        cutoff_time = current_time - self.window_size
+        
+        self.request_history = [
+            (t, c) for t, c in self.request_history 
+            if t > cutoff_time
+        ]
+        
+        self.token_history = [
+            (t, c) for t, c in self.token_history 
+            if t > cutoff_time
+        ]
+    
+    def get_metrics(self) -> Dict:
+        """获取吞吐量指标"""
+        
+        current_time = time.time()
+        elapsed_time = current_time - self.start_time
+        
+        # 计算整体指标
+        overall_qps = self.request_counter / elapsed_time if elapsed_time > 0 else 0
+        overall_tps = self.token_counter / elapsed_time if elapsed_time > 0 else 0
+        
+        # 计算窗口内指标
+        window_requests = sum(c for _, c in self.request_history)
+        window_tokens = sum(c for _, c in self.token_history)
+        window_qps = window_requests / self.window_size
+        window_tps = window_tokens / self.window_size
+        
+        # 计算峰值
+        peak_qps = self.calculate_peak_qps()
+        peak_tps = self.calculate_peak_tps()
+        
+        return {
+            'overall': {
+                'qps': overall_qps,
+                'tps': overall_tps,
+                'total_requests': self.request_counter,
+                'total_tokens': self.token_counter,
+                'elapsed_time': elapsed_time
+            },
+            'window': {
+                'qps': window_qps,
+                'tps': window_tps,
+                'requests': window_requests,
+                'tokens': window_tokens,
+                'window_size': self.window_size
+            },
+            'peak': {
+                'qps': peak_qps,
+                'tps': peak_tps
+            }
+        }
+    
+    def calculate_peak_qps(self) -> float:
+        """计算峰值QPS"""
+        if not self.request_history:
+            return 0
+        
+        # 使用滑动窗口计算1秒内的最大QPS
+        window = 1.0  # 1秒窗口
+        max_qps = 0
+        
+        for i, (timestamp, _) in enumerate(self.request_history):
+            count = 0
+            for t, c in self.request_history[i:]:
+                if t - timestamp <= window:
+                    count += c
+                else:
+                    break
+            
+            qps = count / window
+            max_qps = max(max_qps, qps)
+        
+        return max_qps
+```
+
+### 3. 资源利用率 (Resource Utilization)
+
+```python
+import psutil
+import gpustat
+from typing import Optional
+
+class ResourceMonitor:
+    """资源监控器"""
+    
+    def __init__(self):
+        self.baseline = self.capture_baseline()
+    
+    def capture_baseline(self) -> Dict:
+        """捕获基线资源使用"""
+        return {
+            'cpu_percent': psutil.cpu_percent(interval=1),
+            'memory_percent': psutil.virtual_memory().percent,
+            'gpu_utilization': self.get_gpu_utilization()
+        }
+    
+    def get_current_metrics(self) -> Dict:
+        """获取当前资源指标"""
+        
+        # CPU指标
+        cpu_metrics = {
+            'percent': psutil.cpu_percent(interval=0.1),
+            'count': psutil.cpu_count(),
+            'freq': psutil.cpu_freq().current if psutil.cpu_freq() else None,
+            'per_core': psutil.cpu_percent(interval=0.1, percpu=True)
+        }
+        
+        # 内存指标
+        memory = psutil.virtual_memory()
+        memory_metrics = {
+            'total': memory.total,
+            'available': memory.available,
+            'percent': memory.percent,
+            'used': memory.used,
+            'free': memory.free
+        }
+        
+        # GPU指标
+        gpu_metrics = self.get_gpu_metrics()
+        
+        # 磁盘I/O
+        disk_io = psutil.disk_io_counters()
+        disk_metrics = {
+            'read_bytes': disk_io.read_bytes,
+            'write_bytes': disk_io.write_bytes,
+            'read_count': disk_io.read_count,
+            'write_count': disk_io.write_count
+        } if disk_io else {}
+        
+        # 网络I/O
+        net_io = psutil.net_io_counters()
+        network_metrics = {
+            'bytes_sent': net_io.bytes_sent,
+            'bytes_recv': net_io.bytes_recv,
+            'packets_sent': net_io.packets_sent,
+            'packets_recv': net_io.packets_recv
+        }
+        
+        return {
+            'cpu': cpu_metrics,
+            'memory': memory_metrics,
+            'gpu': gpu_metrics,
+            'disk': disk_metrics,
+            'network': network_metrics,
+            'timestamp': time.time()
+        }
+    
+    def get_gpu_metrics(self) -> Optional[Dict]:
+        """获取GPU指标"""
+        try:
+            import nvidia_ml_py as nvml
+            
+            nvml.nvmlInit()
+            device_count = nvml.nvmlDeviceGetCount()
+            
+            gpu_metrics = []
+            for i in range(device_count):
+                handle = nvml.nvmlDeviceGetHandleByIndex(i)
+                
+                # 获取GPU信息
+                utilization = nvml.nvmlDeviceGetUtilizationRates(handle)
+                memory = nvml.nvmlDeviceGetMemoryInfo(handle)
+                temperature = nvml.nvmlDeviceGetTemperature(handle, nvml.NVML_TEMPERATURE_GPU)
+                power = nvml.nvmlDeviceGetPowerUsage(handle) / 1000.0  # 转换为瓦特
+                
+                gpu_metrics.append({
+                    'index': i,
+                    'utilization': utilization.gpu,
+                    'memory_utilization': utilization.memory,
+                    'memory_total': memory.total,
+                    'memory_used': memory.used,
+                    'memory_free': memory.free,
+                    'temperature': temperature,
+                    'power': power
+                })
+            
+            return gpu_metrics
+            
+        except Exception as e:
+            return None
+    
+    def calculate_efficiency(self, throughput_metrics: Dict, resource_metrics: Dict) -> Dict:
+        """计算资源效率"""
+        
+        efficiency = {}
+        
+        # QPS per CPU core
+        if 'cpu' in resource_metrics and throughput_metrics.get('qps'):
+            cpu_count = resource_metrics['cpu']['count']
+            efficiency['qps_per_core'] = throughput_metrics['qps'] / cpu_count
+        
+        # Tokens per GB memory
+        if 'memory' in resource_metrics and throughput_metrics.get('tps'):
+            memory_gb = resource_metrics['memory']['used'] / (1024**3)
+            efficiency['tokens_per_gb'] = throughput_metrics['tps'] / memory_gb if memory_gb > 0 else 0
+        
+        # GPU efficiency
+        if 'gpu' in resource_metrics and resource_metrics['gpu']:
+            gpu_util = np.mean([g['utilization'] for g in resource_metrics['gpu']])
+            efficiency['gpu_efficiency'] = gpu_util / 100.0
+        
+        return efficiency
+```
+
+### 4. 成本指标 (Cost Metrics)
+
+```python
+class CostCalculator:
+    """成本计算器"""
+    
+    def __init__(self):
+        # 定义成本模型
+        self.cost_model = {
+            'compute': {
+                'cpu_hour': 0.05,  # $/CPU-hour
+                'gpu_hour': {
+                    'A100': 2.0,
+                    'V100': 1.5,
+                    'T4': 0.5
+                },
+                'memory_gb_hour': 0.01
+            },
+            'api': {
+                'gpt-4': {
+                    'input': 0.03,  # $/1K tokens
+                    'output': 0.06
+                },
+                'gpt-3.5-turbo': {
+                    'input': 0.001,
+                    'output': 0.002
+                }
+            },
+            'storage': {
+                'gb_month': 0.1
+            },
+            'network': {
+                'gb_transfer': 0.08
+            }
+        }
+    
+    def calculate_request_cost(self, request_metrics: Dict) -> Dict:
+        """计算单个请求成本"""
+        
+        cost_breakdown = {}
+        
+        # API成本
+        if 'model' in request_metrics and 'tokens' in request_metrics:
+            model = request_metrics['model']
+            if model in self.cost_model['api']:
+                input_cost = (request_metrics['tokens']['input'] / 1000) * \
+                            self.cost_model['api'][model]['input']
+                output_cost = (request_metrics['tokens']['output'] / 1000) * \
+                             self.cost_model['api'][model]['output']
+                
+                cost_breakdown['api'] = {
+                    'input': input_cost,
+                    'output': output_cost,
+                    'total': input_cost + output_cost
+                }
+        
+        # 计算成本
+        if 'compute_time' in request_metrics:
+            compute_hours = request_metrics['compute_time'] / 3600
+            
+            if 'gpu_type' in request_metrics:
+                gpu_type = request_metrics['gpu_type']
+                gpu_cost = compute_hours * self.cost_model['compute']['gpu_hour'].get(gpu_type, 0)
+                cost_breakdown['compute'] = gpu_cost
+            else:
+                cpu_cores = request_metrics.get('cpu_cores', 1)
+                cpu_cost = compute_hours * cpu_cores * self.cost_model['compute']['cpu_hour']
+                cost_breakdown['compute'] = cpu_cost
+        
+        # 总成本
+        total_cost = sum(
+            v['total'] if isinstance(v, dict) else v 
+            for v in cost_breakdown.values()
+        )
+        
+        return {
+            'total': total_cost,
+            'breakdown': cost_breakdown,
+            'cost_per_token': total_cost / request_metrics['tokens']['total'] if request_metrics.get('tokens') else 0
+        }
+    
+    def calculate_roi(self, cost_metrics: Dict, business_metrics: Dict) -> Dict:
+        """计算投资回报率"""
+        
+        # 计算收益
+        revenue = business_metrics.get('revenue', 0)
+        cost_savings = business_metrics.get('cost_savings', 0)
+        total_benefit = revenue + cost_savings
+        
+        # 计算成本
+        total_cost = cost_metrics['total']
+        
+        # ROI计算
+        roi = ((total_benefit - total_cost) / total_cost) * 100 if total_cost > 0 else 0
+        
+        # 回收期
+        payback_period = total_cost / (total_benefit / 12) if total_benefit > 0 else float('inf')
+        
+        return {
+            'roi_percentage': roi,
+            'payback_period_months': payback_period,
+            'total_benefit': total_benefit,
+            'total_cost': total_cost,
+            'net_benefit': total_benefit - total_cost,
+            'benefit_cost_ratio': total_benefit / total_cost if total_cost > 0 else 0
+        }
+```
+
+## 性能优化策略
+
+### 1. 模型优化
+
+```python
+class ModelOptimizer:
+    """模型性能优化"""
+    
+    def optimize_model(self, model, optimization_level='balanced'):
+        """优化模型性能"""
+        
+        strategies = {
+            'aggressive': {
+                'quantization': 'int4',
+                'pruning': 0.5,
+                'distillation': True,
+                'batch_size': 32
+            },
+            'balanced': {
+                'quantization': 'int8',
+                'pruning': 0.3,
+                'distillation': False,
+                'batch_size': 16
+            },
+            'conservative': {
+                'quantization': 'fp16',
+                'pruning': 0.1,
+                'distillation': False,
+                'batch_size': 8
+            }
+        }
+        
+        config = strategies[optimization_level]
+        
+        # 应用优化
+        optimized_model = self.apply_quantization(model, config['quantization'])
+        optimized_model = self.apply_pruning(optimized_model, config['pruning'])
+        
+        if config['distillation']:
+            optimized_model = self.apply_distillation(optimized_model)
+        
+        return optimized_model
+```
+
+### 2. 缓存策略
+
+```python
+class PerformanceCache:
+    """性能缓存系统"""
+    
+    def __init__(self, max_size=1000, ttl=3600):
+        self.cache = {}
+        self.max_size = max_size
+        self.ttl = ttl
+        self.hit_count = 0
+        self.miss_count = 0
+    
+    async def get_or_compute(self, key, compute_func):
+        """获取缓存或计算"""
+        
+        # 检查缓存
+        if key in self.cache:
+            entry = self.cache[key]
+            if time.time() - entry['timestamp'] < self.ttl:
+                self.hit_count += 1
+                return entry['value']
+        
+        # 缓存未命中
+        self.miss_count += 1
+        
+        # 计算结果
+        start_time = time.perf_counter()
+        value = await compute_func()
+        compute_time = time.perf_counter() - start_time
+        
+        # 存储到缓存
+        self.cache[key] = {
+            'value': value,
+            'timestamp': time.time(),
+            'compute_time': compute_time
+        }
+        
+        # 清理过期缓存
+        if len(self.cache) > self.max_size:
+            self.evict_oldest()
+        
+        return value
+    
+    def get_statistics(self):
+        """获取缓存统计"""
+        
+        total_requests = self.hit_count + self.miss_count
+        hit_rate = self.hit_count / total_requests if total_requests > 0 else 0
+        
+        # 计算节省的时间
+        saved_time = sum(
+            entry['compute_time'] 
+            for entry in self.cache.values()
+        ) * self.hit_count
+        
+        return {
+            'hit_rate': hit_rate,
+            'hit_count': self.hit_count,
+            'miss_count': self.miss_count,
+            'cache_size': len(self.cache),
+            'saved_time_seconds': saved_time
+        }
+```
+
+## 性能监控仪表板
+
+```python
+class PerformanceDashboard:
+    """性能监控仪表板"""
+    
+    def __init__(self):
+        self.metrics_collector = MetricsCollector()
+        self.alert_manager = AlertManager()
+    
+    def generate_dashboard_data(self):
+        """生成仪表板数据"""
+        
+        current_metrics = self.metrics_collector.get_current_metrics()
+        
+        return {
+            'latency': {
+                'current': current_metrics['latency'],
+                'trend': self.calculate_trend('latency'),
+                'alerts': self.check_latency_alerts(current_metrics['latency'])
+            },
+            'throughput': {
+                'current': current_metrics['throughput'],
+                'trend': self.calculate_trend('throughput'),
+                'capacity': self.estimate_capacity()
+            },
+            'resources': {
+                'cpu': current_metrics['cpu'],
+                'memory': current_metrics['memory'],
+                'gpu': current_metrics['gpu'],
+                'efficiency': self.calculate_efficiency()
+            },
+            'cost': {
+                'current_rate': self.calculate_current_cost_rate(),
+                'projection': self.project_monthly_cost(),
+                'optimization_opportunities': self.identify_cost_optimizations()
+            },
+            'health_score': self.calculate_health_score(current_metrics)
+        }
+    
+    def calculate_health_score(self, metrics):
+        """计算系统健康分数"""
+        
+        scores = {
+            'latency': self.score_latency(metrics['latency']),
+            'throughput': self.score_throughput(metrics['throughput']),
+            'error_rate': self.score_error_rate(metrics.get('error_rate', 0)),
+            'resource_usage': self.score_resource_usage(metrics)
+        }
+        
+        weights = {
+            'latency': 0.3,
+            'throughput': 0.3,
+            'error_rate': 0.2,
+            'resource_usage': 0.2
+        }
+        
+        health_score = sum(scores[k] * weights[k] for k in weights)
+        
+        return {
+            'score': health_score,
+            'breakdown': scores,
+            'status': self.get_health_status(health_score)
+        }
+```
+
+## 最佳实践
+
+<Cards>
+  <Card title="建立基线">
+    在优化前先建立性能基线，便于对比改进效果
+  </Card>
+  
+  <Card title="渐进优化">
+    逐步应用优化策略，避免一次性改动过多
+  </Card>
+  
+  <Card title="监控先行">
+    先建立完善的监控，再进行优化
+  </Card>
+  
+  <Card title="成本意识">
+    平衡性能和成本，追求最佳性价比
+  </Card>
+</Cards>
+
+## 关键要点
+
+- ✅ 性能指标需要多维度综合评估
+- ✅ 延迟和吞吐量往往需要权衡
+- ✅ 资源利用率直接影响成本
+- ✅ 性能优化需要持续监控和调整
+- ✅ 建立告警机制及时发现性能问题

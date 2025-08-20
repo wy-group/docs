@@ -1,0 +1,39 @@
+{
+  "title": "评估指南",
+  "root": true,
+  "pages": [
+    "index",
+    {
+      "type": "separator",
+      "title": "入门指南"
+    },
+    "getting-started/introduction",
+    "getting-started/quick-start",
+    "getting-started/concepts",
+    {
+      "type": "separator",
+      "title": "评估方法"
+    },
+    "evaluation-methods/overview",
+    "evaluation-methods/llm-as-judge",
+    "evaluation-methods/human-annotation",
+    "evaluation-methods/user-feedback",
+    "evaluation-methods/custom-scoring",
+    {
+      "type": "separator",
+      "title": "评估指标"
+    },
+    "metrics/quality-metrics",
+    "metrics/performance-metrics",
+    "metrics/business-metrics",
+    "metrics/composite-scoring",
+    {
+      "type": "separator",
+      "title": "实施指南"
+    },
+    "implementation/development-testing",
+    "implementation/production-monitoring",
+    "implementation/cicd-integration",
+    "implementation/dataset-management"
+  ]
+}

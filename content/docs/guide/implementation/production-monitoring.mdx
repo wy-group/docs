@@ -1,0 +1,1056 @@
+---
+title: 生产环境监控
+description: 构建全面的 LLM 生产环境监控和告警体系
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 生产环境监控
+
+生产环境的 LLM 系统需要全方位的监控和告警机制，确保系统稳定运行并及时发现和解决问题。
+
+## 监控架构设计
+
+### 监控体系架构
+
+<Mermaid
+  chart="
+graph TB
+    A[LLM应用] --> B[指标采集层]
+    B --> C[数据处理层]
+    C --> D[存储层]
+    D --> E[分析层]
+    E --> F[可视化层]
+    E --> G[告警层]
+    
+    B --> B1[Metrics]
+    B --> B2[Logs]
+    B --> B3[Traces]
+    B --> B4[Events]
+    
+    C --> C1[聚合]
+    C --> C2[采样]
+    C --> C3[过滤]
+    
+    D --> D1[时序数据库]
+    D --> D2[日志存储]
+    D --> D3[对象存储]
+    
+    F --> F1[仪表板]
+    F --> F2[报表]
+    
+    G --> G1[实时告警]
+    G --> G2[智能告警]
+"
+/>
+
+## 核心监控指标
+
+### 1. 质量监控
+
+```python
+class QualityMonitor:
+    """生产环境质量监控"""
+    
+    def __init__(self):
+        self.metrics_client = MetricsClient()
+        self.baseline = self.load_baseline()
+        self.alert_manager = AlertManager()
+    
+    def monitor_response_quality(self, request, response):
+        """监控响应质量"""
+        
+        # 实时质量评分
+        quality_metrics = {
+            'accuracy': self.measure_accuracy(response),
+            'relevance': self.measure_relevance(request, response),
+            'completeness': self.measure_completeness(response),
+            'safety': self.check_safety(response),
+            'coherence': self.measure_coherence(response)
+        }
+        
+        # 发送指标
+        for metric_name, value in quality_metrics.items():
+            self.metrics_client.gauge(
+                f'llm.quality.{metric_name}',
+                value,
+                tags={
+                    'model': request.model,
+                    'endpoint': request.endpoint,
+                    'user_segment': request.user_segment
+                }
+            )
+        
+        # 检查质量下降
+        if self.detect_quality_degradation(quality_metrics):
+            self.alert_manager.send_alert(
+                level='warning',
+                title='Quality Degradation Detected',
+                details=quality_metrics
+            )
+        
+        return quality_metrics
+    
+    def detect_quality_degradation(self, current_metrics):
+        """检测质量下降"""
+        
+        for metric, value in current_metrics.items():
+            baseline_value = self.baseline.get(metric, 0)
+            
+            # 计算下降百分比
+            if baseline_value > 0:
+                degradation = (baseline_value - value) / baseline_value
+                
+                # 超过阈值触发告警
+                if degradation > 0.1:  # 10%下降
+                    return True
+        
+        return False
+    
+    def monitor_hallucination_rate(self, responses_batch):
+        """监控幻觉率"""
+        
+        hallucination_count = 0
+        
+        for response in responses_batch:
+            if self.detect_hallucination(response):
+                hallucination_count += 1
+                
+                # 记录详细信息
+                self.log_hallucination_case(response)
+        
+        hallucination_rate = hallucination_count / len(responses_batch)
+        
+        self.metrics_client.gauge(
+            'llm.quality.hallucination_rate',
+            hallucination_rate
+        )
+        
+        # 高幻觉率告警
+        if hallucination_rate > 0.05:  # 5%阈值
+            self.alert_manager.send_critical_alert(
+                'High Hallucination Rate',
+                f'Current rate: {hallucination_rate:.2%}'
+            )
+    
+    def monitor_bias_and_fairness(self, responses_batch):
+        """监控偏见和公平性"""
+        
+        bias_metrics = {
+            'gender_bias': self.measure_gender_bias(responses_batch),
+            'racial_bias': self.measure_racial_bias(responses_batch),
+            'age_bias': self.measure_age_bias(responses_batch),
+            'fairness_score': self.calculate_fairness_score(responses_batch)
+        }
+        
+        for metric, value in bias_metrics.items():
+            self.metrics_client.gauge(
+                f'llm.fairness.{metric}',
+                value
+            )
+            
+            # 偏见超标告警
+            if value > self.get_bias_threshold(metric):
+                self.alert_manager.send_alert(
+                    level='high',
+                    title=f'Bias Detected: {metric}',
+                    details={'score': value, 'threshold': self.get_bias_threshold(metric)}
+                )
+```
+
+### 2. 性能监控
+
+<Tabs items={['延迟监控', '吞吐量监控', '资源监控', '成本监控']}>
+  <Tab value="延迟监控">
+    ```python
+    class LatencyMonitor:
+        """延迟监控"""
+        
+        def __init__(self):
+            self.histogram = Histogram(
+                'llm_request_duration_seconds',
+                'LLM request duration',
+                ['model', 'operation', 'status']
+            )
+            self.slo_target = 0.95  # 95% SLO
+        
+        def record_latency(self, request, response, duration):
+            """记录延迟"""
+            
+            # 记录直方图
+            self.histogram.labels(
+                model=request.model,
+                operation=request.operation,
+                status=response.status
+            ).observe(duration)
+            
+            # 分解延迟
+            latency_breakdown = {
+                'queue_time': response.queue_time,
+                'inference_time': response.inference_time,
+                'post_processing_time': response.post_processing_time,
+                'total_time': duration
+            }
+            
+            # 发送详细指标
+            for component, time_value in latency_breakdown.items():
+                self.metrics_client.timing(
+                    f'llm.latency.{component}',
+                    time_value,
+                    tags={'model': request.model}
+                )
+            
+            # SLO监控
+            self.monitor_slo(duration)
+            
+            # 延迟异常检测
+            if self.is_latency_anomaly(duration, request.model):
+                self.investigate_latency_spike(request, response, duration)
+        
+        def monitor_slo(self, duration):
+            """监控SLO"""
+            
+            # 更新SLO指标
+            slo_threshold = 2.0  # 2秒阈值
+            
+            if duration <= slo_threshold:
+                self.metrics_client.increment('llm.slo.success')
+            else:
+                self.metrics_client.increment('llm.slo.failure')
+            
+            # 计算当前SLO
+            current_slo = self.calculate_current_slo()
+            
+            if current_slo < self.slo_target:
+                self.alert_manager.send_alert(
+                    level='critical',
+                    title='SLO Violation',
+                    details={
+                        'current_slo': current_slo,
+                        'target_slo': self.slo_target,
+                        'error_budget_remaining': self.calculate_error_budget()
+                    }
+                )
+        
+        def is_latency_anomaly(self, duration, model):
+            """检测延迟异常"""
+            
+            # 获取历史P95
+            historical_p95 = self.get_historical_p95(model)
+            
+            # 检测异常（超过P95的3倍）
+            return duration > historical_p95 * 3
+        
+        def investigate_latency_spike(self, request, response, duration):
+            """调查延迟峰值"""
+            
+            investigation = {
+                'timestamp': datetime.now(),
+                'duration': duration,
+                'request_size': len(request.prompt),
+                'response_size': len(response.text),
+                'model_load': self.get_model_load(request.model),
+                'queue_depth': self.get_queue_depth(),
+                'concurrent_requests': self.get_concurrent_requests()
+            }
+            
+            # 记录调查结果
+            self.logger.warning(
+                "Latency spike detected",
+                extra=investigation
+            )
+            
+            # 自动缓解措施
+            if investigation['queue_depth'] > 100:
+                self.auto_scale_up()
+    ```
+  </Tab>
+  
+  <Tab value="吞吐量监控">
+    ```python
+    class ThroughputMonitor:
+        """吞吐量监控"""
+        
+        def __init__(self):
+            self.request_counter = Counter(
+                'llm_requests_total',
+                'Total LLM requests',
+                ['model', 'status']
+            )
+            self.token_counter = Counter(
+                'llm_tokens_total',
+                'Total tokens processed',
+                ['model', 'type']
+            )
+        
+        def record_request(self, request, response):
+            """记录请求"""
+            
+            # 请求计数
+            self.request_counter.labels(
+                model=request.model,
+                status=response.status
+            ).inc()
+            
+            # Token计数
+            self.token_counter.labels(
+                model=request.model,
+                type='input'
+            ).inc(request.input_tokens)
+            
+            self.token_counter.labels(
+                model=request.model,
+                type='output'
+            ).inc(response.output_tokens)
+            
+            # 计算实时指标
+            metrics = {
+                'requests_per_second': self.calculate_rps(),
+                'tokens_per_second': self.calculate_tps(),
+                'average_tokens_per_request': self.calculate_avg_tokens(),
+                'success_rate': self.calculate_success_rate()
+            }
+            
+            # 发送指标
+            for metric_name, value in metrics.items():
+                self.metrics_client.gauge(
+                    f'llm.throughput.{metric_name}',
+                    value
+                )
+            
+            # 容量监控
+            self.monitor_capacity_utilization()
+        
+        def monitor_capacity_utilization(self):
+            """监控容量利用率"""
+            
+            current_rps = self.calculate_rps()
+            max_capacity = self.get_max_capacity()
+            
+            utilization = current_rps / max_capacity
+            
+            self.metrics_client.gauge(
+                'llm.capacity.utilization',
+                utilization
+            )
+            
+            # 高利用率告警
+            if utilization > 0.8:
+                self.alert_manager.send_alert(
+                    level='warning',
+                    title='High Capacity Utilization',
+                    details={
+                        'current_utilization': f'{utilization:.1%}',
+                        'current_rps': current_rps,
+                        'max_capacity': max_capacity
+                    }
+                )
+            
+            # 自动扩容建议
+            if utilization > 0.9:
+                self.recommend_scaling()
+    ```
+  </Tab>
+  
+  <Tab value="资源监控">
+    ```python
+    class ResourceMonitor:
+        """资源监控"""
+        
+        def __init__(self):
+            self.gpu_monitors = self.init_gpu_monitors()
+            self.memory_monitor = MemoryMonitor()
+            self.cpu_monitor = CPUMonitor()
+        
+        def monitor_gpu_utilization(self):
+            """监控GPU利用率"""
+            
+            gpu_metrics = []
+            
+            for gpu_id, monitor in self.gpu_monitors.items():
+                metrics = monitor.get_metrics()
+                
+                gpu_metrics.append({
+                    'gpu_id': gpu_id,
+                    'utilization': metrics['utilization'],
+                    'memory_used': metrics['memory_used'],
+                    'memory_total': metrics['memory_total'],
+                    'temperature': metrics['temperature'],
+                    'power_draw': metrics['power_draw']
+                })
+                
+                # 发送指标
+                for metric_name, value in metrics.items():
+                    self.metrics_client.gauge(
+                        f'llm.gpu.{metric_name}',
+                        value,
+                        tags={'gpu_id': gpu_id}
+                    )
+                
+                # GPU异常告警
+                if metrics['temperature'] > 85:
+                    self.alert_manager.send_alert(
+                        level='warning',
+                        title=f'GPU {gpu_id} Overheating',
+                        details={'temperature': metrics['temperature']}
+                    )
+                
+                if metrics['utilization'] < 0.3:
+                    self.logger.info(f"GPU {gpu_id} underutilized")
+            
+            return gpu_metrics
+        
+        def monitor_memory_usage(self):
+            """监控内存使用"""
+            
+            memory_metrics = {
+                'heap_used': self.memory_monitor.get_heap_usage(),
+                'heap_max': self.memory_monitor.get_heap_max(),
+                'off_heap': self.memory_monitor.get_off_heap(),
+                'cache_size': self.memory_monitor.get_cache_size(),
+                'model_memory': self.memory_monitor.get_model_memory()
+            }
+            
+            # 内存泄漏检测
+            if self.detect_memory_leak():
+                self.alert_manager.send_critical_alert(
+                    'Memory Leak Detected',
+                    self.get_memory_leak_details()
+                )
+            
+            # OOM风险预警
+            memory_usage_percent = memory_metrics['heap_used'] / memory_metrics['heap_max']
+            if memory_usage_percent > 0.9:
+                self.alert_manager.send_alert(
+                    level='critical',
+                    title='OOM Risk',
+                    details={'memory_usage': f'{memory_usage_percent:.1%}'}
+                )
+            
+            return memory_metrics
+    ```
+  </Tab>
+  
+  <Tab value="成本监控">
+    ```python
+    class CostMonitor:
+        """成本监控"""
+        
+        def __init__(self):
+            self.cost_calculator = CostCalculator()
+            self.budget_tracker = BudgetTracker()
+        
+        def track_request_cost(self, request, response):
+            """跟踪请求成本"""
+            
+            # 计算成本组成
+            cost_breakdown = {
+                'compute_cost': self.calculate_compute_cost(request, response),
+                'api_cost': self.calculate_api_cost(request, response),
+                'storage_cost': self.calculate_storage_cost(request, response),
+                'network_cost': self.calculate_network_cost(request, response)
+            }
+            
+            total_cost = sum(cost_breakdown.values())
+            
+            # 记录成本
+            self.metrics_client.gauge(
+                'llm.cost.per_request',
+                total_cost,
+                tags={
+                    'model': request.model,
+                    'user': request.user_id,
+                    'department': request.department
+                }
+            )
+            
+            # 更新预算跟踪
+            self.budget_tracker.add_cost(
+                amount=total_cost,
+                category=request.cost_center
+            )
+            
+            # 成本异常检测
+            if total_cost > self.get_cost_threshold(request):
+                self.investigate_high_cost(request, response, cost_breakdown)
+            
+            return cost_breakdown
+        
+        def monitor_budget_utilization(self):
+            """监控预算使用"""
+            
+            budget_status = self.budget_tracker.get_status()
+            
+            for department, status in budget_status.items():
+                utilization = status['spent'] / status['budget']
+                
+                self.metrics_client.gauge(
+                    'llm.budget.utilization',
+                    utilization,
+                    tags={'department': department}
+                )
+                
+                # 预算告警
+                if utilization > 0.8:
+                    self.alert_manager.send_alert(
+                        level='warning',
+                        title=f'Budget Alert: {department}',
+                        details={
+                            'spent': status['spent'],
+                            'budget': status['budget'],
+                            'remaining': status['budget'] - status['spent'],
+                            'days_left': status['days_left']
+                        }
+                    )
+                
+                # 预算超支
+                if utilization > 1.0:
+                    self.enforce_budget_limits(department)
+        
+        def generate_cost_report(self, period='daily'):
+            """生成成本报告"""
+            
+            report = {
+                'period': period,
+                'total_cost': self.calculate_total_cost(period),
+                'cost_by_model': self.aggregate_by_model(period),
+                'cost_by_department': self.aggregate_by_department(period),
+                'cost_by_user': self.aggregate_by_user(period),
+                'cost_trends': self.analyze_cost_trends(period),
+                'optimization_opportunities': self.identify_cost_optimizations()
+            }
+            
+            return report
+    ```
+  </Tab>
+</Tabs>
+
+### 3. 可用性监控
+
+```python
+class AvailabilityMonitor:
+    """可用性监控"""
+    
+    def __init__(self):
+        self.health_checker = HealthChecker()
+        self.uptime_tracker = UptimeTracker()
+    
+    def perform_health_check(self):
+        """执行健康检查"""
+        
+        health_status = {
+            'api_health': self.check_api_health(),
+            'model_health': self.check_model_health(),
+            'dependency_health': self.check_dependencies(),
+            'database_health': self.check_database_health()
+        }
+        
+        overall_health = all(status['healthy'] for status in health_status.values())
+        
+        # 更新健康状态
+        self.metrics_client.gauge(
+            'llm.health.status',
+            1 if overall_health else 0
+        )
+        
+        # 组件级健康状态
+        for component, status in health_status.items():
+            self.metrics_client.gauge(
+                f'llm.health.{component}',
+                1 if status['healthy'] else 0,
+                tags={'details': status.get('message', '')}
+            )
+        
+        # 不健康告警
+        if not overall_health:
+            unhealthy_components = [
+                comp for comp, status in health_status.items()
+                if not status['healthy']
+            ]
+            
+            self.alert_manager.send_critical_alert(
+                'Service Unhealthy',
+                {'unhealthy_components': unhealthy_components}
+            )
+        
+        return health_status
+    
+    def monitor_error_rates(self):
+        """监控错误率"""
+        
+        error_metrics = {
+            '4xx_rate': self.calculate_4xx_rate(),
+            '5xx_rate': self.calculate_5xx_rate(),
+            'timeout_rate': self.calculate_timeout_rate(),
+            'model_error_rate': self.calculate_model_error_rate()
+        }
+        
+        for metric_name, rate in error_metrics.items():
+            self.metrics_client.gauge(
+                f'llm.errors.{metric_name}',
+                rate
+            )
+            
+            # 错误率告警
+            threshold = self.get_error_threshold(metric_name)
+            if rate > threshold:
+                self.alert_manager.send_alert(
+                    level='high',
+                    title=f'High Error Rate: {metric_name}',
+                    details={
+                        'current_rate': f'{rate:.2%}',
+                        'threshold': f'{threshold:.2%}'
+                    }
+                )
+        
+        return error_metrics
+```
+
+## 日志和追踪
+
+### 结构化日志
+
+```python
+class StructuredLogger:
+    """结构化日志记录"""
+    
+    def __init__(self):
+        self.logger = self.setup_logger()
+    
+    def log_request(self, request, response, metadata):
+        """记录请求日志"""
+        
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'trace_id': metadata['trace_id'],
+            'request': {
+                'id': request.id,
+                'user_id': request.user_id,
+                'model': request.model,
+                'prompt_tokens': request.token_count,
+                'parameters': request.parameters
+            },
+            'response': {
+                'status': response.status,
+                'output_tokens': response.token_count,
+                'latency_ms': response.latency,
+                'quality_score': response.quality_score
+            },
+            'metadata': {
+                'environment': metadata['environment'],
+                'version': metadata['version'],
+                'region': metadata['region']
+            }
+        }
+        
+        # 添加安全过滤
+        log_entry = self.sanitize_sensitive_data(log_entry)
+        
+        # 记录日志
+        self.logger.info("llm_request", extra=log_entry)
+        
+        # 异步发送到日志聚合服务
+        self.ship_to_aggregator(log_entry)
+    
+    def setup_logger(self):
+        """设置日志记录器"""
+        
+        import logging
+        import json
+        
+        class JSONFormatter(logging.Formatter):
+            def format(self, record):
+                log_obj = {
+                    'timestamp': datetime.now().isoformat(),
+                    'level': record.levelname,
+                    'message': record.getMessage(),
+                    'logger': record.name
+                }
+                
+                if hasattr(record, 'extra'):
+                    log_obj.update(record.extra)
+                
+                return json.dumps(log_obj)
+        
+        logger = logging.getLogger('llm_monitor')
+        handler = logging.StreamHandler()
+        handler.setFormatter(JSONFormatter())
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        
+        return logger
+```
+
+### 分布式追踪
+
+```python
+class DistributedTracer:
+    """分布式追踪"""
+    
+    def __init__(self):
+        from opentelemetry import trace
+        from opentelemetry.exporter.otlp.proto.grpc import trace_exporter
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        
+        # 设置追踪器
+        trace.set_tracer_provider(TracerProvider())
+        tracer_provider = trace.get_tracer_provider()
+        
+        # 配置导出器
+        otlp_exporter = trace_exporter.OTLPSpanExporter(
+            endpoint="localhost:4317",
+            insecure=True
+        )
+        
+        # 添加批处理器
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        tracer_provider.add_span_processor(span_processor)
+        
+        self.tracer = trace.get_tracer(__name__)
+    
+    def trace_llm_request(self, request):
+        """追踪LLM请求"""
+        
+        with self.tracer.start_as_current_span(
+            "llm_request",
+            kind=trace.SpanKind.CLIENT
+        ) as span:
+            
+            # 添加属性
+            span.set_attribute("llm.model", request.model)
+            span.set_attribute("llm.user_id", request.user_id)
+            span.set_attribute("llm.prompt_tokens", request.token_count)
+            
+            try:
+                # 预处理追踪
+                with self.tracer.start_as_current_span("preprocessing"):
+                    preprocessed = self.preprocess(request)
+                
+                # 模型推理追踪
+                with self.tracer.start_as_current_span("inference") as inference_span:
+                    inference_span.set_attribute("llm.temperature", request.temperature)
+                    response = self.call_model(preprocessed)
+                
+                # 后处理追踪
+                with self.tracer.start_as_current_span("postprocessing"):
+                    final_response = self.postprocess(response)
+                
+                # 质量评估追踪
+                with self.tracer.start_as_current_span("quality_evaluation"):
+                    quality_score = self.evaluate_quality(final_response)
+                    span.set_attribute("llm.quality_score", quality_score)
+                
+                span.set_status(trace.Status(trace.StatusCode.OK))
+                
+                return final_response
+                
+            except Exception as e:
+                span.set_status(
+                    trace.Status(trace.StatusCode.ERROR, str(e))
+                )
+                span.record_exception(e)
+                raise
+```
+
+## 智能告警
+
+### 告警策略
+
+```python
+class IntelligentAlertManager:
+    """智能告警管理器"""
+    
+    def __init__(self):
+        self.alert_rules = self.load_alert_rules()
+        self.alert_history = []
+        self.suppression_rules = []
+    
+    def evaluate_alert_conditions(self, metrics):
+        """评估告警条件"""
+        
+        triggered_alerts = []
+        
+        for rule in self.alert_rules:
+            if self.should_trigger_alert(rule, metrics):
+                alert = self.create_alert(rule, metrics)
+                
+                # 告警去重
+                if not self.is_duplicate_alert(alert):
+                    # 告警聚合
+                    alert = self.aggregate_related_alerts(alert)
+                    
+                    # 告警抑制
+                    if not self.is_suppressed(alert):
+                        # 告警升级
+                        alert = self.escalate_if_needed(alert)
+                        
+                        triggered_alerts.append(alert)
+        
+        return triggered_alerts
+    
+    def create_smart_alert(self, alert_type, metrics):
+        """创建智能告警"""
+        
+        alert = {
+            'id': str(uuid.uuid4()),
+            'type': alert_type,
+            'timestamp': datetime.now(),
+            'severity': self.calculate_severity(alert_type, metrics),
+            'title': self.generate_alert_title(alert_type, metrics),
+            'description': self.generate_alert_description(alert_type, metrics),
+            'metrics': metrics,
+            'probable_cause': self.analyze_root_cause(alert_type, metrics),
+            'recommended_actions': self.suggest_remediation(alert_type, metrics),
+            'auto_remediation': self.can_auto_remediate(alert_type)
+        }
+        
+        # 预测影响
+        alert['predicted_impact'] = self.predict_impact(alert)
+        
+        # 相关告警
+        alert['related_alerts'] = self.find_related_alerts(alert)
+        
+        return alert
+    
+    def analyze_root_cause(self, alert_type, metrics):
+        """分析根因"""
+        
+        if alert_type == 'high_latency':
+            # 分析延迟原因
+            if metrics.get('queue_depth', 0) > 100:
+                return 'Queue congestion'
+            elif metrics.get('gpu_utilization', 0) > 0.95:
+                return 'GPU resource exhaustion'
+            elif metrics.get('model_loading_time', 0) > 5:
+                return 'Model loading delay'
+            else:
+                return 'Unknown - requires investigation'
+        
+        elif alert_type == 'quality_degradation':
+            # 分析质量下降原因
+            if metrics.get('model_version_changed', False):
+                return 'Recent model update'
+            elif metrics.get('input_distribution_shift', 0) > 0.3:
+                return 'Input distribution shift'
+            elif metrics.get('temperature', 0) > 0.9:
+                return 'High temperature setting'
+        
+        return 'Requires manual investigation'
+    
+    def suggest_remediation(self, alert_type, metrics):
+        """建议修复措施"""
+        
+        suggestions = []
+        
+        if alert_type == 'high_latency':
+            if metrics.get('queue_depth', 0) > 100:
+                suggestions.append('Scale up instances')
+                suggestions.append('Enable request throttling')
+            
+            if metrics.get('cache_hit_rate', 1) < 0.3:
+                suggestions.append('Optimize cache configuration')
+        
+        elif alert_type == 'high_error_rate':
+            if metrics.get('timeout_errors', 0) > 0.5:
+                suggestions.append('Increase timeout threshold')
+                suggestions.append('Optimize slow queries')
+            
+            if metrics.get('model_errors', 0) > 0.1:
+                suggestions.append('Check model health')
+                suggestions.append('Consider model rollback')
+        
+        return suggestions
+```
+
+## 仪表板设计
+
+```python
+class MonitoringDashboard:
+    """监控仪表板"""
+    
+    def generate_dashboard_config(self):
+        """生成仪表板配置"""
+        
+        return {
+            'overview': {
+                'widgets': [
+                    {
+                        'type': 'metric',
+                        'title': 'Request Rate',
+                        'query': 'rate(llm_requests_total[5m])',
+                        'unit': 'req/s'
+                    },
+                    {
+                        'type': 'gauge',
+                        'title': 'Quality Score',
+                        'query': 'avg(llm_quality_score)',
+                        'thresholds': [0.7, 0.85, 0.95]
+                    },
+                    {
+                        'type': 'heatmap',
+                        'title': 'Latency Distribution',
+                        'query': 'histogram_quantile(0.95, llm_latency_bucket)'
+                    }
+                ]
+            },
+            'quality': {
+                'widgets': [
+                    {
+                        'type': 'line_chart',
+                        'title': 'Quality Metrics Trend',
+                        'queries': {
+                            'accuracy': 'avg(llm_quality_accuracy)',
+                            'relevance': 'avg(llm_quality_relevance)',
+                            'safety': 'avg(llm_quality_safety)'
+                        }
+                    },
+                    {
+                        'type': 'bar_chart',
+                        'title': 'Error Types Distribution',
+                        'query': 'sum by (error_type) (llm_errors_total)'
+                    }
+                ]
+            },
+            'performance': {
+                'widgets': [
+                    {
+                        'type': 'time_series',
+                        'title': 'Latency Percentiles',
+                        'queries': {
+                            'p50': 'histogram_quantile(0.5, llm_latency_bucket)',
+                            'p95': 'histogram_quantile(0.95, llm_latency_bucket)',
+                            'p99': 'histogram_quantile(0.99, llm_latency_bucket)'
+                        }
+                    },
+                    {
+                        'type': 'gauge_grid',
+                        'title': 'Resource Utilization',
+                        'metrics': {
+                            'CPU': 'avg(cpu_usage_percent)',
+                            'Memory': 'avg(memory_usage_percent)',
+                            'GPU': 'avg(gpu_utilization_percent)'
+                        }
+                    }
+                ]
+            },
+            'business': {
+                'widgets': [
+                    {
+                        'type': 'number',
+                        'title': 'Total Cost Today',
+                        'query': 'sum(increase(llm_cost_total[24h]))',
+                        'format': 'currency'
+                    },
+                    {
+                        'type': 'pie_chart',
+                        'title': 'Cost by Model',
+                        'query': 'sum by (model) (llm_cost_total)'
+                    }
+                ]
+            }
+        }
+```
+
+## 告警自动化响应
+
+```python
+class AutoRemediationSystem:
+    """自动修复系统"""
+    
+    def __init__(self):
+        self.remediation_rules = self.load_remediation_rules()
+        self.action_executor = ActionExecutor()
+    
+    def handle_alert(self, alert):
+        """处理告警"""
+        
+        # 检查是否可以自动修复
+        if self.can_auto_remediate(alert):
+            return self.execute_auto_remediation(alert)
+        else:
+            return self.escalate_to_human(alert)
+    
+    def execute_auto_remediation(self, alert):
+        """执行自动修复"""
+        
+        remediation_plan = self.create_remediation_plan(alert)
+        
+        results = []
+        for action in remediation_plan['actions']:
+            try:
+                result = self.action_executor.execute(action)
+                results.append({
+                    'action': action['name'],
+                    'status': 'success',
+                    'result': result
+                })
+                
+                # 验证修复效果
+                if self.verify_remediation(alert, action):
+                    break  # 修复成功，停止后续动作
+                    
+            except Exception as e:
+                results.append({
+                    'action': action['name'],
+                    'status': 'failed',
+                    'error': str(e)
+                })
+        
+        return {
+            'alert_id': alert['id'],
+            'remediation_results': results,
+            'final_status': self.check_alert_resolved(alert)
+        }
+    
+    def create_remediation_plan(self, alert):
+        """创建修复计划"""
+        
+        if alert['type'] == 'high_latency':
+            return {
+                'actions': [
+                    {'name': 'clear_cache', 'type': 'immediate'},
+                    {'name': 'scale_up', 'params': {'instances': 2}},
+                    {'name': 'enable_throttling', 'params': {'rate': 100}}
+                ]
+            }
+        elif alert['type'] == 'high_error_rate':
+            return {
+                'actions': [
+                    {'name': 'restart_unhealthy_instances'},
+                    {'name': 'rollback_model', 'params': {'version': 'stable'}},
+                    {'name': 'enable_circuit_breaker'}
+                ]
+            }
+```
+
+## 最佳实践
+
+<Cards>
+  <Card title="全面覆盖">
+    监控质量、性能、可用性和成本等多个维度
+  </Card>
+  
+  <Card title="实时性">
+    使用流式处理和实时告警，快速发现问题
+  </Card>
+  
+  <Card title="智能化">
+    利用机器学习进行异常检测和根因分析
+  </Card>
+  
+  <Card title="自动化">
+    实现告警自动响应和问题自动修复
+  </Card>
+</Cards>
+
+## 关键要点
+
+- ✅ 建立多层次的监控体系，覆盖应用、系统和业务层面
+- ✅ 使用结构化日志和分布式追踪提高可观测性
+- ✅ 实施智能告警减少告警疲劳
+- ✅ 构建自动化响应机制提高系统自愈能力
+- ✅ 定期审查和优化监控指标和告警规则

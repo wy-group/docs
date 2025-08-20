@@ -1,0 +1,1039 @@
+---
+title: 综合评分
+description: 学习如何将多个评估维度整合成统一的综合评分系统
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# 综合评分系统
+
+综合评分将多个独立指标整合成一个统一的分数，提供全面的评估视角。本章介绍如何设计、实现和优化综合评分系统。
+
+## 综合评分框架
+
+### 评分体系架构
+
+<Mermaid
+  chart="
+graph TD
+    A[原始指标] --> B[标准化]
+    B --> C[权重分配]
+    C --> D[聚合计算]
+    D --> E[综合评分]
+    E --> F[等级映射]
+    
+    G[质量指标] --> A
+    H[性能指标] --> A
+    I[业务指标] --> A
+    J[安全指标] --> A
+    
+    K[动态调整] --> C
+    L[业务规则] --> D
+    M[阈值校准] --> F
+"
+/>
+
+## 评分设计原则
+
+### 1. 指标选择与权重
+
+<Tabs items={['指标选择', '权重设计', '动态调整', '验证方法']}>
+  <Tab value="指标选择">
+    ```python
+    class MetricSelection:
+        """指标选择框架"""
+        
+        def __init__(self):
+            self.metric_pool = self.define_metric_pool()
+            self.selection_criteria = self.define_criteria()
+        
+        def define_metric_pool(self) -> Dict:
+            """定义指标池"""
+            
+            return {
+                'quality': {
+                    'accuracy': {
+                        'importance': 'critical',
+                        'measurability': 'high',
+                        'reliability': 'high',
+                        'cost': 'low'
+                    },
+                    'relevance': {
+                        'importance': 'high',
+                        'measurability': 'high',
+                        'reliability': 'medium',
+                        'cost': 'low'
+                    },
+                    'completeness': {
+                        'importance': 'high',
+                        'measurability': 'medium',
+                        'reliability': 'medium',
+                        'cost': 'medium'
+                    },
+                    'fluency': {
+                        'importance': 'medium',
+                        'measurability': 'high',
+                        'reliability': 'high',
+                        'cost': 'low'
+                    }
+                },
+                'performance': {
+                    'latency': {
+                        'importance': 'critical',
+                        'measurability': 'high',
+                        'reliability': 'high',
+                        'cost': 'low'
+                    },
+                    'throughput': {
+                        'importance': 'high',
+                        'measurability': 'high',
+                        'reliability': 'high',
+                        'cost': 'low'
+                    },
+                    'resource_usage': {
+                        'importance': 'medium',
+                        'measurability': 'high',
+                        'reliability': 'high',
+                        'cost': 'low'
+                    }
+                },
+                'business': {
+                    'user_satisfaction': {
+                        'importance': 'critical',
+                        'measurability': 'medium',
+                        'reliability': 'medium',
+                        'cost': 'high'
+                    },
+                    'task_completion': {
+                        'importance': 'critical',
+                        'measurability': 'high',
+                        'reliability': 'high',
+                        'cost': 'medium'
+                    },
+                    'conversion_rate': {
+                        'importance': 'high',
+                        'measurability': 'high',
+                        'reliability': 'high',
+                        'cost': 'low'
+                    }
+                }
+            }
+        
+        def select_metrics(self, use_case: str, constraints: Dict) -> List[str]:
+            """根据用例选择指标"""
+            
+            selected = []
+            
+            # 基于用例的必选指标
+            required_metrics = self.get_required_metrics(use_case)
+            selected.extend(required_metrics)
+            
+            # 基于约束的可选指标
+            budget = constraints.get('budget', float('inf'))
+            max_metrics = constraints.get('max_metrics', 10)
+            
+            # 计算每个指标的价值分数
+            metric_scores = {}
+            for category, metrics in self.metric_pool.items():
+                for metric, properties in metrics.items():
+                    if metric not in selected:
+                        score = self.calculate_metric_value(properties, use_case)
+                        cost = self.estimate_metric_cost(properties)
+                        
+                        if cost <= budget:
+                            metric_scores[metric] = score / cost  # 价值/成本比
+            
+            # 选择最优指标组合
+            sorted_metrics = sorted(
+                metric_scores.items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )
+            
+            for metric, score in sorted_metrics[:max_metrics - len(selected)]:
+                selected.append(metric)
+            
+            return selected
+        
+        def calculate_metric_value(self, properties: Dict, use_case: str) -> float:
+            """计算指标价值"""
+            
+            importance_weights = {
+                'critical': 1.0,
+                'high': 0.7,
+                'medium': 0.4,
+                'low': 0.1
+            }
+            
+            measurability_weights = {
+                'high': 1.0,
+                'medium': 0.6,
+                'low': 0.3
+            }
+            
+            reliability_weights = {
+                'high': 1.0,
+                'medium': 0.7,
+                'low': 0.4
+            }
+            
+            value = (
+                importance_weights[properties['importance']] * 0.5 +
+                measurability_weights[properties['measurability']] * 0.3 +
+                reliability_weights[properties['reliability']] * 0.2
+            )
+            
+            # 根据用例调整
+            use_case_multiplier = self.get_use_case_multiplier(use_case, properties)
+            
+            return value * use_case_multiplier
+    ```
+  </Tab>
+  
+  <Tab value="权重设计">
+    ```python
+    class WeightDesign:
+        """权重设计系统"""
+        
+        def __init__(self):
+            self.weight_methods = {
+                'equal': self.equal_weights,
+                'expert': self.expert_weights,
+                'data_driven': self.data_driven_weights,
+                'ahp': self.ahp_weights,
+                'entropy': self.entropy_weights
+            }
+        
+        def calculate_weights(self, metrics: List[str], method: str = 'data_driven', 
+                            context: Optional[Dict] = None) -> Dict:
+            """计算指标权重"""
+            
+            if method not in self.weight_methods:
+                raise ValueError(f"Unknown method: {method}")
+            
+            weights = self.weight_methods[method](metrics, context)
+            
+            # 验证权重
+            self.validate_weights(weights)
+            
+            # 归一化
+            weights = self.normalize_weights(weights)
+            
+            return weights
+        
+        def equal_weights(self, metrics: List[str], context: Dict) -> Dict:
+            """等权重分配"""
+            n = len(metrics)
+            return {metric: 1/n for metric in metrics}
+        
+        def expert_weights(self, metrics: List[str], context: Dict) -> Dict:
+            """专家权重"""
+            
+            # 收集专家意见
+            expert_opinions = context.get('expert_opinions', {})
+            
+            if not expert_opinions:
+                # 默认专家权重
+                default_weights = {
+                    'accuracy': 0.25,
+                    'relevance': 0.20,
+                    'completeness': 0.15,
+                    'latency': 0.15,
+                    'user_satisfaction': 0.25
+                }
+                return {m: default_weights.get(m, 0.1) for m in metrics}
+            
+            # 聚合多个专家意见
+            aggregated = {}
+            for metric in metrics:
+                opinions = [op[metric] for op in expert_opinions.values() if metric in op]
+                if opinions:
+                    aggregated[metric] = np.mean(opinions)
+                else:
+                    aggregated[metric] = 0.1  # 默认权重
+            
+            return aggregated
+        
+        def data_driven_weights(self, metrics: List[str], context: Dict) -> Dict:
+            """数据驱动权重"""
+            
+            # 获取历史数据
+            historical_data = context.get('historical_data', [])
+            
+            if not historical_data:
+                return self.equal_weights(metrics, context)
+            
+            # 计算每个指标与业务目标的相关性
+            target = context.get('target_metric', 'user_satisfaction')
+            
+            correlations = {}
+            for metric in metrics:
+                if metric == target:
+                    correlations[metric] = 1.0
+                else:
+                    # 计算相关性
+                    metric_values = [d[metric] for d in historical_data if metric in d]
+                    target_values = [d[target] for d in historical_data if target in d]
+                    
+                    if len(metric_values) > 1 and len(target_values) > 1:
+                        correlation = np.corrcoef(metric_values, target_values)[0, 1]
+                        correlations[metric] = abs(correlation)  # 使用绝对值
+                    else:
+                        correlations[metric] = 0.1
+            
+            return correlations
+        
+        def ahp_weights(self, metrics: List[str], context: Dict) -> Dict:
+            """层次分析法（AHP）"""
+            
+            # 构建判断矩阵
+            n = len(metrics)
+            comparison_matrix = np.ones((n, n))
+            
+            # 获取成对比较结果
+            comparisons = context.get('pairwise_comparisons', {})
+            
+            for i, metric1 in enumerate(metrics):
+                for j, metric2 in enumerate(metrics):
+                    if i != j:
+                        key = f"{metric1}_vs_{metric2}"
+                        if key in comparisons:
+                            comparison_matrix[i, j] = comparisons[key]
+                        else:
+                            # 默认同等重要
+                            comparison_matrix[i, j] = 1.0
+            
+            # 计算特征向量
+            eigenvalues, eigenvectors = np.linalg.eig(comparison_matrix)
+            max_eigenvalue_index = np.argmax(eigenvalues)
+            priority_vector = np.abs(eigenvectors[:, max_eigenvalue_index])
+            priority_vector = priority_vector / np.sum(priority_vector)
+            
+            # 一致性检验
+            ci = (np.max(eigenvalues) - n) / (n - 1)
+            ri = self.get_random_index(n)
+            cr = ci / ri if ri > 0 else 0
+            
+            if cr > 0.1:
+                print(f"Warning: Consistency ratio {cr:.3f} > 0.1")
+            
+            return {metrics[i]: priority_vector[i] for i in range(n)}
+        
+        def entropy_weights(self, metrics: List[str], context: Dict) -> Dict:
+            """熵权法"""
+            
+            # 获取数据矩阵
+            data = context.get('evaluation_data', [])
+            
+            if not data:
+                return self.equal_weights(metrics, context)
+            
+            # 构建决策矩阵
+            matrix = []
+            for metric in metrics:
+                values = [d[metric] for d in data if metric in d]
+                matrix.append(values)
+            
+            matrix = np.array(matrix)
+            
+            # 标准化
+            normalized = matrix / np.sum(matrix, axis=1, keepdims=True)
+            
+            # 计算熵
+            k = 1 / np.log(len(data))
+            entropy = -k * np.sum(normalized * np.log(normalized + 1e-10), axis=1)
+            
+            # 计算权重
+            diversity = 1 - entropy
+            weights = diversity / np.sum(diversity)
+            
+            return {metrics[i]: weights[i] for i in range(len(metrics))}
+    ```
+  </Tab>
+  
+  <Tab value="动态调整">
+    ```python
+    class DynamicWeightAdjustment:
+        """动态权重调整"""
+        
+        def __init__(self):
+            self.adjustment_history = []
+            self.learning_rate = 0.1
+        
+        def adjust_weights(self, current_weights: Dict, feedback: Dict) -> Dict:
+            """根据反馈调整权重"""
+            
+            # 计算调整方向
+            gradients = self.calculate_gradients(current_weights, feedback)
+            
+            # 应用调整
+            adjusted_weights = {}
+            for metric, weight in current_weights.items():
+                if metric in gradients:
+                    # 梯度下降更新
+                    new_weight = weight - self.learning_rate * gradients[metric]
+                    # 确保权重在合理范围
+                    adjusted_weights[metric] = np.clip(new_weight, 0.01, 1.0)
+                else:
+                    adjusted_weights[metric] = weight
+            
+            # 归一化
+            total = sum(adjusted_weights.values())
+            adjusted_weights = {k: v/total for k, v in adjusted_weights.items()}
+            
+            # 记录调整历史
+            self.adjustment_history.append({
+                'timestamp': datetime.now(),
+                'original': current_weights,
+                'adjusted': adjusted_weights,
+                'feedback': feedback
+            })
+            
+            return adjusted_weights
+        
+        def contextual_adjustment(self, base_weights: Dict, context: Dict) -> Dict:
+            """基于上下文的权重调整"""
+            
+            adjusted = base_weights.copy()
+            
+            # 时间因素
+            if context.get('is_peak_time'):
+                # 高峰期更重视性能
+                adjusted['latency'] *= 1.5
+                adjusted['throughput'] *= 1.3
+            
+            # 用户类型
+            user_type = context.get('user_type')
+            if user_type == 'premium':
+                # 付费用户更重视质量
+                adjusted['accuracy'] *= 1.3
+                adjusted['completeness'] *= 1.2
+            elif user_type == 'trial':
+                # 试用用户更重视体验
+                adjusted['user_satisfaction'] *= 1.4
+                adjusted['latency'] *= 1.2
+            
+            # 任务类型
+            task_type = context.get('task_type')
+            if task_type == 'critical':
+                # 关键任务更重视准确性
+                adjusted['accuracy'] *= 1.5
+                adjusted['safety'] *= 1.3
+            elif task_type == 'exploratory':
+                # 探索性任务更重视创造性
+                adjusted['creativity'] *= 1.4
+                adjusted['diversity'] *= 1.2
+            
+            # 归一化
+            total = sum(adjusted.values())
+            return {k: v/total for k, v in adjusted.items()}
+    ```
+  </Tab>
+  
+  <Tab value="验证方法">
+    ```python
+    class WeightValidation:
+        """权重验证系统"""
+        
+        def validate_weights(self, weights: Dict, validation_data: List[Dict]) -> Dict:
+            """验证权重有效性"""
+            
+            validation_results = {
+                'sensitivity_analysis': self.sensitivity_analysis(weights, validation_data),
+                'consistency_check': self.consistency_check(weights, validation_data),
+                'predictive_power': self.predictive_power_test(weights, validation_data),
+                'stability_test': self.stability_test(weights, validation_data)
+            }
+            
+            # 综合评估
+            validation_score = self.calculate_validation_score(validation_results)
+            
+            return {
+                'score': validation_score,
+                'results': validation_results,
+                'recommendations': self.generate_recommendations(validation_results)
+            }
+        
+        def sensitivity_analysis(self, weights: Dict, data: List[Dict]) -> Dict:
+            """敏感性分析"""
+            
+            sensitivity = {}
+            
+            for metric, weight in weights.items():
+                # 微调权重
+                perturbations = [-0.1, -0.05, 0.05, 0.1]
+                impacts = []
+                
+                for delta in perturbations:
+                    perturbed_weights = weights.copy()
+                    perturbed_weights[metric] = weight + delta
+                    
+                    # 重新归一化
+                    total = sum(perturbed_weights.values())
+                    perturbed_weights = {k: v/total for k, v in perturbed_weights.items()}
+                    
+                    # 计算影响
+                    original_scores = self.calculate_scores(weights, data)
+                    perturbed_scores = self.calculate_scores(perturbed_weights, data)
+                    
+                    impact = np.mean(np.abs(
+                        np.array(original_scores) - np.array(perturbed_scores)
+                    ))
+                    impacts.append(impact)
+                
+                sensitivity[metric] = {
+                    'mean_impact': np.mean(impacts),
+                    'max_impact': np.max(impacts),
+                    'stability': 1 / (1 + np.std(impacts))
+                }
+            
+            return sensitivity
+    ```
+  </Tab>
+</Tabs>
+
+### 2. 评分计算方法
+
+```python
+class CompositeScorer:
+    """综合评分计算器"""
+    
+    def __init__(self):
+        self.normalization_methods = {
+            'min_max': self.min_max_normalization,
+            'z_score': self.z_score_normalization,
+            'sigmoid': self.sigmoid_normalization,
+            'percentile': self.percentile_normalization
+        }
+        
+        self.aggregation_methods = {
+            'weighted_sum': self.weighted_sum,
+            'weighted_product': self.weighted_product,
+            'harmonic_mean': self.harmonic_mean,
+            'geometric_mean': self.geometric_mean,
+            'owa': self.ordered_weighted_average
+        }
+    
+    def calculate_composite_score(self, metrics: Dict, weights: Dict, 
+                                 normalization: str = 'min_max',
+                                 aggregation: str = 'weighted_sum') -> Dict:
+        """计算综合评分"""
+        
+        # 1. 数据预处理
+        cleaned_metrics = self.preprocess_metrics(metrics)
+        
+        # 2. 标准化
+        normalized = self.normalize_metrics(
+            cleaned_metrics, 
+            method=normalization
+        )
+        
+        # 3. 聚合计算
+        composite_score = self.aggregate_scores(
+            normalized, 
+            weights, 
+            method=aggregation
+        )
+        
+        # 4. 后处理
+        final_score = self.postprocess_score(composite_score)
+        
+        # 5. 生成详细报告
+        report = {
+            'final_score': final_score,
+            'raw_metrics': metrics,
+            'normalized_metrics': normalized,
+            'weights': weights,
+            'calculation_method': {
+                'normalization': normalization,
+                'aggregation': aggregation
+            },
+            'breakdown': self.calculate_breakdown(normalized, weights),
+            'confidence': self.calculate_confidence(metrics),
+            'interpretation': self.interpret_score(final_score)
+        }
+        
+        return report
+    
+    def weighted_sum(self, scores: Dict, weights: Dict) -> float:
+        """加权求和"""
+        return sum(scores[k] * weights[k] for k in scores)
+    
+    def weighted_product(self, scores: Dict, weights: Dict) -> float:
+        """加权乘积"""
+        product = 1.0
+        for k in scores:
+            product *= scores[k] ** weights[k]
+        return product
+    
+    def harmonic_mean(self, scores: Dict, weights: Dict) -> float:
+        """调和平均"""
+        denominator = sum(weights[k] / scores[k] if scores[k] > 0 else float('inf') 
+                         for k in scores)
+        if denominator == float('inf'):
+            return 0
+        return sum(weights.values()) / denominator
+    
+    def geometric_mean(self, scores: Dict, weights: Dict) -> float:
+        """几何平均"""
+        product = 1.0
+        total_weight = sum(weights.values())
+        for k in scores:
+            product *= scores[k] ** (weights[k] / total_weight)
+        return product
+    
+    def ordered_weighted_average(self, scores: Dict, weights: Dict) -> float:
+        """有序加权平均（OWA）"""
+        # 按分数排序
+        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        
+        # OWA权重（强调极值）
+        n = len(sorted_scores)
+        owa_weights = self.generate_owa_weights(n)
+        
+        # 计算OWA
+        owa_score = sum(score * w for (_, score), w in zip(sorted_scores, owa_weights))
+        
+        return owa_score
+```
+
+### 3. 分数映射与解释
+
+```python
+class ScoreMapping:
+    """分数映射与解释"""
+    
+    def __init__(self):
+        self.grade_boundaries = {
+            'S': (0.95, 1.00),
+            'A': (0.85, 0.95),
+            'B': (0.70, 0.85),
+            'C': (0.50, 0.70),
+            'D': (0.30, 0.50),
+            'F': (0.00, 0.30)
+        }
+        
+        self.interpretation_templates = self.load_interpretation_templates()
+    
+    def map_to_grade(self, score: float) -> str:
+        """映射到等级"""
+        for grade, (min_score, max_score) in self.grade_boundaries.items():
+            if min_score <= score <= max_score:
+                return grade
+        return 'F'
+    
+    def generate_interpretation(self, score_report: Dict) -> Dict:
+        """生成分数解释"""
+        
+        score = score_report['final_score']
+        grade = self.map_to_grade(score)
+        
+        interpretation = {
+            'score': score,
+            'grade': grade,
+            'percentile': self.calculate_percentile(score),
+            'summary': self.generate_summary(score, grade),
+            'strengths': self.identify_strengths(score_report),
+            'weaknesses': self.identify_weaknesses(score_report),
+            'improvements': self.suggest_improvements(score_report),
+            'comparison': self.compare_with_benchmarks(score)
+        }
+        
+        return interpretation
+    
+    def generate_summary(self, score: float, grade: str) -> str:
+        """生成总结"""
+        
+        templates = {
+            'S': "卓越表现！系统在所有维度都达到了最高标准，性能优异。",
+            'A': "优秀表现！系统整体质量很高，仅有少量可改进空间。",
+            'B': "良好表现。系统达到了预期标准，但仍有明显的提升潜力。",
+            'C': "及格表现。系统基本满足要求，但需要在多个方面进行改进。",
+            'D': "欠佳表现。系统存在明显问题，需要重点关注和改进。",
+            'F': "不合格。系统未达到基本要求，需要全面整改。"
+        }
+        
+        return templates.get(grade, "需要进一步评估。")
+    
+    def identify_strengths(self, report: Dict) -> List[Dict]:
+        """识别优势"""
+        
+        strengths = []
+        breakdown = report['breakdown']
+        
+        # 找出得分最高的维度
+        sorted_metrics = sorted(
+            breakdown.items(), 
+            key=lambda x: x[1]['weighted_score'], 
+            reverse=True
+        )
+        
+        for metric, details in sorted_metrics[:3]:
+            if details['normalized_score'] > 0.8:
+                strengths.append({
+                    'metric': metric,
+                    'score': details['normalized_score'],
+                    'impact': details['weighted_score'],
+                    'description': self.describe_strength(metric, details)
+                })
+        
+        return strengths
+    
+    def identify_weaknesses(self, report: Dict) -> List[Dict]:
+        """识别弱点"""
+        
+        weaknesses = []
+        breakdown = report['breakdown']
+        
+        # 找出得分最低的维度
+        sorted_metrics = sorted(
+            breakdown.items(), 
+            key=lambda x: x[1]['weighted_score']
+        )
+        
+        for metric, details in sorted_metrics[:3]:
+            if details['normalized_score'] < 0.6:
+                weaknesses.append({
+                    'metric': metric,
+                    'score': details['normalized_score'],
+                    'impact': details['weight'] * (1 - details['normalized_score']),
+                    'description': self.describe_weakness(metric, details)
+                })
+        
+        return weaknesses
+```
+
+## 高级综合评分技术
+
+### 1. 多准则决策分析 (MCDA)
+
+```python
+class MCDAScoring:
+    """多准则决策分析评分"""
+    
+    def topsis_score(self, decision_matrix: np.ndarray, weights: np.ndarray,
+                    criteria_types: List[str]) -> np.ndarray:
+        """TOPSIS方法"""
+        
+        # 1. 归一化决策矩阵
+        normalized = decision_matrix / np.sqrt(
+            np.sum(decision_matrix**2, axis=0)
+        )
+        
+        # 2. 加权归一化
+        weighted = normalized * weights
+        
+        # 3. 确定理想解和负理想解
+        ideal = np.zeros(weighted.shape[1])
+        negative_ideal = np.zeros(weighted.shape[1])
+        
+        for j, criteria_type in enumerate(criteria_types):
+            if criteria_type == 'benefit':  # 越大越好
+                ideal[j] = np.max(weighted[:, j])
+                negative_ideal[j] = np.min(weighted[:, j])
+            else:  # 越小越好（成本型）
+                ideal[j] = np.min(weighted[:, j])
+                negative_ideal[j] = np.max(weighted[:, j])
+        
+        # 4. 计算到理想解的距离
+        d_plus = np.sqrt(np.sum((weighted - ideal)**2, axis=1))
+        d_minus = np.sqrt(np.sum((weighted - negative_ideal)**2, axis=1))
+        
+        # 5. 计算相对接近度
+        scores = d_minus / (d_plus + d_minus)
+        
+        return scores
+    
+    def promethee_score(self, alternatives: List[Dict], criteria: List[str],
+                       weights: Dict, preference_functions: Dict) -> Dict:
+        """PROMETHEE方法"""
+        
+        n = len(alternatives)
+        
+        # 计算偏好指数
+        preference_matrix = np.zeros((n, n))
+        
+        for i in range(n):
+            for j in range(n):
+                if i != j:
+                    pi_ij = 0
+                    for criterion in criteria:
+                        diff = alternatives[i][criterion] - alternatives[j][criterion]
+                        pref = preference_functions[criterion](diff)
+                        pi_ij += weights[criterion] * pref
+                    preference_matrix[i, j] = pi_ij
+        
+        # 计算流入流和流出流
+        positive_flow = np.sum(preference_matrix, axis=1) / (n - 1)
+        negative_flow = np.sum(preference_matrix, axis=0) / (n - 1)
+        
+        # 计算净流
+        net_flow = positive_flow - negative_flow
+        
+        return {
+            'positive_flow': positive_flow,
+            'negative_flow': negative_flow,
+            'net_flow': net_flow,
+            'ranking': np.argsort(net_flow)[::-1]
+        }
+```
+
+### 2. 机器学习驱动的评分
+
+```python
+class MLDrivenScoring:
+    """机器学习驱动的综合评分"""
+    
+    def __init__(self):
+        self.model = None
+        self.feature_importance = None
+    
+    def train_scoring_model(self, training_data: pd.DataFrame, 
+                           target_column: str = 'human_score'):
+        """训练评分模型"""
+        
+        from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+        from sklearn.model_selection import cross_val_score, GridSearchCV
+        
+        # 特征和目标
+        features = [col for col in training_data.columns if col != target_column]
+        X = training_data[features]
+        y = training_data[target_column]
+        
+        # 模型选择和超参数优化
+        models = {
+            'rf': RandomForestRegressor(random_state=42),
+            'gbm': GradientBoostingRegressor(random_state=42)
+        }
+        
+        param_grids = {
+            'rf': {
+                'n_estimators': [100, 200],
+                'max_depth': [10, 20, None],
+                'min_samples_split': [2, 5]
+            },
+            'gbm': {
+                'n_estimators': [100, 200],
+                'learning_rate': [0.05, 0.1],
+                'max_depth': [3, 5]
+            }
+        }
+        
+        best_model = None
+        best_score = -float('inf')
+        
+        for model_name, model in models.items():
+            grid_search = GridSearchCV(
+                model, 
+                param_grids[model_name],
+                cv=5,
+                scoring='r2'
+            )
+            grid_search.fit(X, y)
+            
+            if grid_search.best_score_ > best_score:
+                best_score = grid_search.best_score_
+                best_model = grid_search.best_estimator_
+        
+        self.model = best_model
+        self.feature_importance = pd.DataFrame({
+            'feature': features,
+            'importance': best_model.feature_importances_
+        }).sort_values('importance', ascending=False)
+        
+        return {
+            'model_type': type(best_model).__name__,
+            'cv_score': best_score,
+            'feature_importance': self.feature_importance.to_dict()
+        }
+    
+    def predict_score(self, metrics: Dict) -> Dict:
+        """预测综合评分"""
+        
+        if self.model is None:
+            raise ValueError("Model not trained")
+        
+        # 准备特征
+        features = pd.DataFrame([metrics])
+        
+        # 预测
+        prediction = self.model.predict(features)[0]
+        
+        # 获取预测区间（如果是随机森林）
+        if hasattr(self.model, 'estimators_'):
+            predictions = [tree.predict(features)[0] for tree in self.model.estimators_]
+            confidence_interval = (
+                np.percentile(predictions, 5),
+                np.percentile(predictions, 95)
+            )
+        else:
+            confidence_interval = None
+        
+        return {
+            'predicted_score': prediction,
+            'confidence_interval': confidence_interval,
+            'feature_contributions': self.explain_prediction(metrics)
+        }
+    
+    def explain_prediction(self, metrics: Dict) -> Dict:
+        """解释预测结果"""
+        
+        # 使用SHAP或LIME进行解释
+        try:
+            import shap
+            
+            explainer = shap.TreeExplainer(self.model)
+            features = pd.DataFrame([metrics])
+            shap_values = explainer.shap_values(features)
+            
+            explanations = {}
+            for i, feature in enumerate(features.columns):
+                explanations[feature] = {
+                    'contribution': shap_values[0][i],
+                    'value': metrics[feature],
+                    'impact': 'positive' if shap_values[0][i] > 0 else 'negative'
+                }
+            
+            return explanations
+            
+        except ImportError:
+            # 简单的特征重要性解释
+            return {
+                feature: {
+                    'importance': imp,
+                    'value': metrics.get(feature, 0)
+                }
+                for feature, imp in self.feature_importance.values
+            }
+```
+
+## 综合评分可视化
+
+```python
+class ScoreVisualization:
+    """综合评分可视化"""
+    
+    def create_score_dashboard(self, score_report: Dict):
+        """创建评分仪表板"""
+        
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        # 创建子图布局
+        fig = make_subplots(
+            rows=2, cols=3,
+            subplot_titles=(
+                '综合评分仪表盘', '维度分解', '历史趋势',
+                '对比分析', '分布图', '改进潜力'
+            ),
+            specs=[
+                [{'type': 'indicator'}, {'type': 'bar'}, {'type': 'scatter'}],
+                [{'type': 'scatter'}, {'type': 'box'}, {'type': 'waterfall'}]
+            ]
+        )
+        
+        # 1. 综合评分仪表盘
+        fig.add_trace(
+            go.Indicator(
+                mode="gauge+number+delta",
+                value=score_report['final_score'] * 100,
+                title={'text': "综合评分"},
+                delta={'reference': 75},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': self.get_color_for_score(score_report['final_score'])},
+                    'steps': [
+                        {'range': [0, 30], 'color': "lightgray"},
+                        {'range': [30, 50], 'color': "gray"},
+                        {'range': [50, 70], 'color': "lightblue"},
+                        {'range': [70, 85], 'color': "lightgreen"},
+                        {'range': [85, 100], 'color': "green"}
+                    ],
+                    'threshold': {
+                        'line': {'color': "red", 'width': 4},
+                        'thickness': 0.75,
+                        'value': 90
+                    }
+                }
+            ),
+            row=1, col=1
+        )
+        
+        # 2. 维度分解柱状图
+        breakdown = score_report['breakdown']
+        fig.add_trace(
+            go.Bar(
+                x=list(breakdown.keys()),
+                y=[v['weighted_score'] for v in breakdown.values()],
+                marker_color='lightblue',
+                text=[f"{v['weighted_score']:.2f}" for v in breakdown.values()],
+                textposition='auto'
+            ),
+            row=1, col=2
+        )
+        
+        # 继续添加其他图表...
+        
+        fig.update_layout(height=800, showlegend=False)
+        
+        return fig
+    
+    def create_comparison_radar(self, scores: List[Dict]):
+        """创建对比雷达图"""
+        
+        import plotly.graph_objects as go
+        
+        fig = go.Figure()
+        
+        for score_data in scores:
+            fig.add_trace(go.Scatterpolar(
+                r=[v['normalized_score'] for v in score_data['breakdown'].values()],
+                theta=list(score_data['breakdown'].keys()),
+                fill='toself',
+                name=score_data.get('name', 'Score')
+            ))
+        
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 1]
+                )
+            ),
+            showlegend=True,
+            title="多维度对比分析"
+        )
+        
+        return fig
+```
+
+## 最佳实践
+
+<Cards>
+  <Card title="透明性">
+    确保评分计算过程透明可解释
+  </Card>
+  
+  <Card title="稳定性">
+    避免评分系统过于敏感或不稳定
+  </Card>
+  
+  <Card title="公平性">
+    确保不同场景下的评分可比较
+  </Card>
+  
+  <Card title="持续优化">
+    基于反馈不断优化评分体系
+  </Card>
+</Cards>
+
+## 关键要点
+
+- ✅ 综合评分需要科学的权重设计
+- ✅ 标准化方法影响最终评分
+- ✅ 聚合方法决定指标间的关系
+- ✅ 评分解释和可视化同样重要
+- ✅ 持续验证和优化是必要的

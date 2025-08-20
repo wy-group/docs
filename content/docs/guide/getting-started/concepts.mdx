@@ -1,0 +1,542 @@
+---
+title: 核心概念
+description: 深入理解 LLM 评估的核心概念、术语和基础知识
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+
+# 核心概念
+
+理解 LLM 评估的核心概念是构建有效评估体系的基础。本章将详细介绍关键术语和概念。
+
+## 基础概念架构
+
+<Mermaid
+  chart="
+graph TB
+    A[LLM Application] --> B[Trace]
+    B --> C[Observation]
+    C --> D[Score]
+    D --> E[Dataset]
+    E --> F[Run]
+    F --> G[Evaluation Report]
+    
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style G fill:#9f9,stroke:#333,stroke-width:2px"
+/>
+
+## 1. Trace（追踪）
+
+### 定义
+Trace 是一次完整的 LLM 交互过程的记录，包含从用户输入到系统输出的全部信息。
+
+### 核心属性
+
+```typescript
+interface Trace {
+  id: string;                    // 唯一标识符
+  timestamp: Date;                // 时间戳
+  input: string;                  // 用户输入
+  output: string;                 // 模型输出
+  metadata: {
+    model: string;                // 使用的模型
+    temperature: number;          // 温度参数
+    max_tokens: number;           // 最大 token 数
+    latency_ms: number;           // 响应延迟
+    token_usage: {
+      prompt_tokens: number;      // 输入 token 数
+      completion_tokens: number;  // 输出 token 数
+      total_tokens: number;       // 总 token 数
+    };
+  };
+  observations: Observation[];    // 观察记录
+  scores: Score[];               // 评分记录
+}
+```
+
+### 实际示例
+
+```python
+# 创建一个 Trace
+trace = langfuse.trace(
+    id="trace_20240120_001",
+    name="customer_support_query",
+    input="如何退换货？",
+    output="您可以在收到商品后7天内申请退换货...",
+    metadata={
+        "user_id": "user_123",
+        "session_id": "session_456",
+        "department": "customer_service"
+    }
+)
+```
+
+<Callout type="info">
+**最佳实践**：为每个 Trace 添加丰富的元数据，便于后续分析和过滤。
+</Callout>
+
+## 2. Observation（观察）
+
+### 定义
+Observation 记录了 Trace 中的具体执行步骤，如 LLM 调用、函数执行、数据检索等。
+
+### 类型分类
+
+<Tabs items={['Generation', 'Retrieval', 'Tool Use', 'Event']}>
+  <Tab value="Generation">
+    **LLM 生成观察**
+    ```python
+    observation = trace.generation(
+        name="gpt4_response",
+        model="gpt-4",
+        input=messages,
+        output=response,
+        model_parameters={
+            "temperature": 0.7,
+            "top_p": 0.9
+        },
+        usage={
+            "prompt_tokens": 150,
+            "completion_tokens": 200
+        }
+    )
+    ```
+  </Tab>
+  
+  <Tab value="Retrieval">
+    **检索观察**
+    ```python
+    observation = trace.span(
+        name="vector_search",
+        input=query_embedding,
+        output=retrieved_documents,
+        metadata={
+            "index": "knowledge_base",
+            "top_k": 5,
+            "similarity_threshold": 0.8
+        }
+    )
+    ```
+  </Tab>
+  
+  <Tab value="Tool Use">
+    **工具调用观察**
+    ```python
+    observation = trace.span(
+        name="calculator_tool",
+        input={"expression": "15 * 24"},
+        output={"result": 360},
+        metadata={
+            "tool_type": "calculator",
+            "execution_time_ms": 5
+        }
+    )
+    ```
+  </Tab>
+  
+  <Tab value="Event">
+    **事件观察**
+    ```python
+    observation = trace.event(
+        name="user_feedback",
+        metadata={
+            "type": "thumbs_up",
+            "timestamp": datetime.now()
+        }
+    )
+    ```
+  </Tab>
+</Tabs>
+
+### 观察链
+
+多个 Observation 可以形成链式结构：
+
+<Mermaid
+  chart="
+graph LR
+    A[用户输入] --> B[意图识别]
+    B --> C[知识检索]
+    C --> D[LLM生成]
+    D --> E[后处理]
+    E --> F[最终输出]"
+/>
+
+## 3. Score（评分）
+
+### 定义
+Score 是对 Trace 或 Observation 质量的量化评估。
+
+### 评分类型
+
+<Accordions>
+  <Accordion title="数值型评分 (Numeric)">
+    连续数值评分，通常在 0-1 或 0-100 范围内。
+    
+    ```python
+    langfuse.score(
+        trace_id=trace.id,
+        name="accuracy",
+        value=0.85,
+        data_type="NUMERIC",
+        comment="基于关键信息覆盖率计算"
+    )
+    ```
+    
+    **适用场景**：
+    - 准确率、召回率
+    - 相似度分数
+    - 置信度评分
+  </Accordion>
+  
+  <Accordion title="布尔型评分 (Boolean)">
+    二元评分，表示是否满足某个条件。
+    
+    ```python
+    langfuse.score(
+        trace_id=trace.id,
+        name="contains_hallucination",
+        value=False,
+        data_type="BOOLEAN",
+        comment="经人工验证无幻觉"
+    )
+    ```
+    
+    **适用场景**：
+    - 是否包含错误信息
+    - 是否满足安全要求
+    - 是否完成任务
+  </Accordion>
+  
+  <Accordion title="分类型评分 (Categorical)">
+    预定义类别中的一个值。
+    
+    ```python
+    langfuse.score(
+        trace_id=trace.id,
+        name="sentiment",
+        value="positive",
+        data_type="CATEGORICAL",
+        comment="情感分析结果"
+    )
+    ```
+    
+    **适用场景**：
+    - 情感分类（正面/中性/负面）
+    - 质量等级（优/良/中/差）
+    - 任务类型分类
+  </Accordion>
+</Accordions>
+
+### 评分维度框架
+
+```python
+class EvaluationDimensions:
+    """评估维度定义"""
+    
+    # 质量维度
+    QUALITY = {
+        "accuracy": "准确性",
+        "relevance": "相关性",
+        "completeness": "完整性",
+        "coherence": "连贯性",
+        "fluency": "流畅性"
+    }
+    
+    # 性能维度
+    PERFORMANCE = {
+        "latency": "响应延迟",
+        "throughput": "吞吐量",
+        "token_efficiency": "Token效率",
+        "cost": "成本"
+    }
+    
+    # 安全维度
+    SAFETY = {
+        "toxicity": "毒性",
+        "bias": "偏见",
+        "privacy": "隐私保护",
+        "hallucination": "幻觉"
+    }
+    
+    # 用户体验维度
+    USER_EXPERIENCE = {
+        "helpfulness": "有用性",
+        "satisfaction": "满意度",
+        "engagement": "参与度"
+    }
+```
+
+## 4. Dataset（数据集）
+
+### 定义
+Dataset 是用于评估的测试案例集合，包含输入、预期输出和评估标准。
+
+### 数据集结构
+
+```python
+class Dataset:
+    def __init__(self, name, description):
+        self.name = name
+        self.description = description
+        self.items = []
+        self.metadata = {}
+    
+    def add_item(self, input_text, expected_output=None, 
+                 evaluation_criteria=None, metadata=None):
+        """添加测试项"""
+        item = {
+            "id": f"{self.name}_{len(self.items)+1:04d}",
+            "input": input_text,
+            "expected_output": expected_output,
+            "evaluation_criteria": evaluation_criteria,
+            "metadata": metadata or {}
+        }
+        self.items.append(item)
+        return item
+```
+
+### 数据集类型
+
+<Cards>
+  <Card title="黄金数据集">
+    经过人工精心标注的高质量数据集，作为评估基准。
+    ```python
+    golden_dataset = Dataset(
+        "golden_qa",
+        "人工验证的问答对"
+    )
+    ```
+  </Card>
+  
+  <Card title="回归测试集">
+    用于确保模型更新不会降低已有功能的性能。
+    ```python
+    regression_dataset = Dataset(
+        "regression_tests",
+        "版本更新回归测试"
+    )
+    ```
+  </Card>
+  
+  <Card title="边界测试集">
+    包含极端案例和边界条件的测试集。
+    ```python
+    edge_cases = Dataset(
+        "edge_cases",
+        "边界条件和异常输入"
+    )
+    ```
+  </Card>
+  
+  <Card title="对抗测试集">
+    设计用于测试模型鲁棒性的对抗性输入。
+    ```python
+    adversarial_dataset = Dataset(
+        "adversarial",
+        "对抗性测试案例"
+    )
+    ```
+  </Card>
+</Cards>
+
+## 5. Run（运行）
+
+### 定义
+Run 是在特定数据集上执行评估的一次完整过程。
+
+### Run 生命周期
+
+<Mermaid
+  chart="
+stateDiagram-v2
+    [*] --> Initialized: 创建 Run
+    Initialized --> Running: 开始执行
+    Running --> Evaluating: 评估中
+    Evaluating --> Completed: 完成
+    Evaluating --> Failed: 失败
+    Completed --> [*]
+    Failed --> [*]"
+/>
+
+### Run 配置示例
+
+```python
+class EvaluationRun:
+    def __init__(self, dataset, model_config, evaluation_config):
+        self.id = generate_uuid()
+        self.dataset = dataset
+        self.model_config = model_config
+        self.evaluation_config = evaluation_config
+        self.start_time = None
+        self.end_time = None
+        self.status = "initialized"
+        self.results = []
+    
+    def execute(self):
+        """执行评估运行"""
+        self.start_time = datetime.now()
+        self.status = "running"
+        
+        for item in self.dataset.items:
+            try:
+                # 生成模型输出
+                output = self.generate_output(item["input"])
+                
+                # 执行评估
+                scores = self.evaluate(
+                    item, 
+                    output, 
+                    self.evaluation_config
+                )
+                
+                # 记录结果
+                self.results.append({
+                    "item_id": item["id"],
+                    "output": output,
+                    "scores": scores,
+                    "timestamp": datetime.now()
+                })
+                
+            except Exception as e:
+                self.handle_error(item, e)
+        
+        self.end_time = datetime.now()
+        self.status = "completed"
+        return self.generate_report()
+```
+
+## 6. 评估指标体系
+
+### 指标层次结构
+
+<Mermaid
+  chart="
+graph TD
+    A[综合评分] --> B[维度评分]
+    B --> C[质量维度]
+    B --> D[性能维度]
+    B --> E[安全维度]
+    B --> F[体验维度]
+    
+    C --> G[准确性]
+    C --> H[相关性]
+    C --> I[完整性]
+    
+    D --> J[延迟]
+    D --> K[吞吐量]
+    D --> L[成本]
+    
+    E --> M[毒性]
+    E --> N[偏见]
+    E --> O[幻觉]
+    
+    F --> P[满意度]
+    F --> Q[有用性]
+    F --> R[易用性]"
+/>
+
+### 指标计算示例
+
+```python
+class MetricsCalculator:
+    """指标计算器"""
+    
+    @staticmethod
+    def calculate_accuracy(predicted, expected):
+        """计算准确率"""
+        if isinstance(predicted, str) and isinstance(expected, str):
+            # 文本相似度
+            return similarity_score(predicted, expected)
+        elif isinstance(predicted, list) and isinstance(expected, list):
+            # 列表匹配
+            correct = sum(1 for p, e in zip(predicted, expected) if p == e)
+            return correct / len(expected)
+    
+    @staticmethod
+    def calculate_f1_score(precision, recall):
+        """计算 F1 分数"""
+        if precision + recall == 0:
+            return 0
+        return 2 * (precision * recall) / (precision + recall)
+    
+    @staticmethod
+    def calculate_bleu(reference, hypothesis):
+        """计算 BLEU 分数"""
+        from nltk.translate.bleu_score import sentence_bleu
+        return sentence_bleu([reference.split()], hypothesis.split())
+```
+
+## 7. 评估流程编排
+
+### 完整评估流程
+
+```python
+class EvaluationPipeline:
+    """评估流程管道"""
+    
+    def __init__(self):
+        self.stages = []
+    
+    def add_stage(self, stage):
+        """添加流程阶段"""
+        self.stages.append(stage)
+        return self
+    
+    def run(self, input_data):
+        """执行流程"""
+        result = input_data
+        for stage in self.stages:
+            result = stage.process(result)
+        return result
+
+# 使用示例
+pipeline = EvaluationPipeline()
+pipeline.add_stage(DataPreprocessor()) \
+        .add_stage(ModelInference()) \
+        .add_stage(QualityEvaluator()) \
+        .add_stage(PerformanceEvaluator()) \
+        .add_stage(ReportGenerator())
+
+results = pipeline.run(test_dataset)
+```
+
+## 术语速查表
+
+| 术语 | 英文 | 定义 | 示例 |
+|------|------|------|------|
+| 追踪 | Trace | 完整的交互记录 | 一次客服对话 |
+| 观察 | Observation | 执行步骤记录 | LLM 调用、检索操作 |
+| 评分 | Score | 质量量化评估 | 准确率: 0.85 |
+| 数据集 | Dataset | 测试案例集合 | 100个QA对 |
+| 运行 | Run | 评估执行过程 | 批量测试执行 |
+| 指标 | Metric | 评估度量标准 | BLEU、F1-Score |
+| 基准 | Baseline | 参考标准 | GPT-4 性能基准 |
+| 幻觉 | Hallucination | 虚假信息生成 | 编造不存在的事实 |
+| 提示词 | Prompt | 输入指令 | "请总结以下文章" |
+| 嵌入 | Embedding | 向量表示 | [0.1, 0.2, ...] |
+
+## 关键要点总结
+
+<Callout type="success">
+**掌握核心概念的重要性**：
+- 建立统一的评估语言体系
+- 确保团队沟通的准确性
+- 为构建评估系统打下基础
+</Callout>
+
+## 实践建议
+
+1. **从简单开始**：先理解 Trace 和 Score，再深入其他概念
+2. **动手实践**：通过代码示例加深理解
+3. **建立映射**：将概念映射到实际业务场景
+4. **持续学习**：评估领域在快速发展，保持学习
+
+## 下一步
+
+现在你已经掌握了核心概念，让我们深入了解具体的评估方法：
+
+<Card title="评估方法总览 →" href="/docs/evaluation-methods/overview" description="探索不同的评估方法及其适用场景" />
